@@ -61,7 +61,9 @@ local commandCategories = {
 			{name = "time [number]", desc = "Set or check time of day"},
 			{name = "sit [player]", desc = "Make player(s) sit"},
 			{name = "unsit [player]", desc = "Make player(s) stand", aliases = {"stand"}},
-			{name = "spin [player]", desc = "Make player(s) spin"}
+			{name = "spin [player]", desc = "Make player(s) spin"},
+			{name = "fly", desc = "Load flight/noclip system"}, 
+			{name = "noclip", desc = "Use ;fly command for noclip"}  
 		}
 	},
 	{
@@ -760,7 +762,6 @@ addCommand("bangv2", function(args)
 	local url = humanoid.RigType == Enum.HumanoidRigType.R6 and 
 		"https://pastebin.com/raw/aPSHMV6K" or 
 		"https://pastebin.com/raw/1ePMTt9n"
-	showNotification("Loading", "🎯 Bang V2...")
 	local success, result = loadExternalScript(url)
 	if success then showNotification("Success", "✓ 🎯 Bang V2 loaded!") else showNotification("Error", "✗ Failed: "..tostring(result)) end
 end, "Load 🎯 Bang V2 script")
@@ -774,7 +775,6 @@ addCommand("getbanged", function(args)
 	local url = humanoid.RigType == Enum.HumanoidRigType.R6 and 
 		"https://pastebin.com/raw/zHbw7ND1" or 
 		"https://pastebin.com/raw/DyPP2tAF"
-	showNotification("Loading", "🎉 Get Banged...")
 	local success, result = loadExternalScript(url)
 	if success then showNotification("Success", "✓ 🎉 Get Banged loaded!") else showNotification("Error", "✗ Failed: "..tostring(result)) end
 end, "Load 🎉 Get Banged script")
@@ -788,7 +788,6 @@ addCommand("suck", function(args)
 	local url = humanoid.RigType == Enum.HumanoidRigType.R6 and 
 		"https://pastebin.com/raw/SymCfnAW" or 
 		"https://pastebin.com/raw/p8yxRfr4"
-	showNotification("Loading", "💥 Suck...")
 	local success, result = loadExternalScript(url)
 	if success then showNotification("Success", "✓ 💥 Suck loaded!") else showNotification("Error", "✗ Failed: "..tostring(result)) end
 end, "Load 💥 Suck script")
@@ -802,7 +801,6 @@ addCommand("getsuc", function(args)
 	local url = humanoid.RigType == Enum.HumanoidRigType.R6 and 
 		"https://pastebin.com/raw/FPu4e2Qh" or 
 		"https://pastebin.com/raw/7hvcjDnW"
-	showNotification("Loading", "🔥 Get Suc...")
 	local success, result = loadExternalScript(url)
 	if success then showNotification("Success", "✓ 🔥 Get Suc loaded!") else showNotification("Error", "✗ Failed: "..tostring(result)) end
 end, "Load 🔥 Get Suc script")
@@ -816,7 +814,6 @@ addCommand("jerk", function(args)
 	local url = humanoid.RigType == Enum.HumanoidRigType.R6 and 
 		"https://pastefy.app/wa3v2Vgm/raw" or 
 		"https://pastefy.app/YZoglOyJ/raw"
-	showNotification("Loading", "⚡ Jerk...")
 	local success, result = loadExternalScript(url)
 	if success then showNotification("Success", "✓ ⚡ Jerk loaded!") else showNotification("Error", "✗ Failed: "..tostring(result)) end
 end, "Load ⚡ Jerk script")
@@ -980,6 +977,24 @@ addCommand("spin", function(args)
 	end
 	showNotification("Spin", "Toggled spin for " .. #players .. " player(s)")
 end, "Make player(s) spin")
+
+-- Fly Command
+addCommand("fly", function()
+	-- Execute the flight script
+	local success, error = pcall(function()
+		loadstring(game:HttpGet("https://pastefy.app/ear6SIcl/raw"))()
+	end)
+
+	if success then
+		showNotification("Success", "You will see a window, it includes fly and noclip.")
+	else
+		showNotification("Error", "✗ Failed to load flight script: " .. tostring(error))
+	end
+end, "Load flight/noclip script")
+
+addCommand("noclip", function(args)
+	showNotification("Use different command", "Please use the ;fly command, it includes noclip!")
+end)
 
 -- Commands List Command (Opens popup)
 addCommand("commands", function()
@@ -1468,3 +1483,4 @@ Players.PlayerRemoving:Connect(function(p)
 		if esp then esp:Destroy() end
 	end
 end)
+
