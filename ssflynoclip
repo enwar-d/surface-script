@@ -1,1486 +1,951 @@
-local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local Lighting = game:GetService("Lighting")
-local SoundService = game:GetService("SoundService")
-local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
-local Workspace = game:GetService("Workspace")
+local TextService = game:GetService("TextService")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-------------------------------------------------
--- GUI
-------------------------------------------------
-local gui = Instance.new("ScreenGui")
-gui.Name = "SurfaceScriptUI"
-gui.ResetOnSpawn = false
-gui.Parent = playerGui
+local GAME_DEFAULT_WALKSPEED = 16
+local MAX_VALUE = 1000
+local SNAP = 5
+local ANIMATION_TIME = 0.3
+local EASING_STYLE = Enum.EasingStyle.Quad
+local EASING_DIRECTION = Enum.EasingDirection.Out
 
-------------------------------------------------
--- BLUR
-------------------------------------------------
-local blur = Instance.new("BlurEffect")
-blur.Size = 0
-blur.Parent = Lighting
+-- Create main GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ScriptBlock_GUI"
+screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 1000
+screenGui.Enabled = false -- Start hidden for animation
+screenGui.Parent = playerGui
 
-------------------------------------------------
--- COMMAND SYSTEM VARIABLES
-------------------------------------------------
-local commandPrefix = ";"
-local commands = {}
-local aliases = {}
-local commandHistory = {}
-local commandIndex = 0
-local commandBarVisible = true
+-- Main container with dark theme
+local FRAME_W, FRAME_H = 300, 200
+local mainFrame = Instance.new("Frame", screenGui)
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, FRAME_W, 0, FRAME_H)
+mainFrame.Position = UDim2.new(0.5, -FRAME_W/2, 1, 0) -- Start off-screen
+mainFrame.BackgroundTransparency = 0.1 -- Start transparent
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
 
--- Check if mobile
-local IS_MOBILE = UserInputService.TouchEnabled
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 10)
+mainCorner.Parent = mainFrame
 
--- Store all commands for display
-local commandCategories = {
-	{
-		name = "📜 SCRIPT COMMANDS",
-		commands = {
-			{name = "bangv2", desc = "Load 🎯 Bang V2 script"},
-			{name = "getbanged", desc = "Load 🎉 Get Banged script"},
-			{name = "suck", desc = "Load 💥 Suck script"},
-			{name = "getsuc", desc = "Load 🔥 Get Suc script"},
-			{name = "jerk", desc = "Load ⚡ Jerk script"}
-		}
-	},
-	{
-		name = "⚙️ UTILITY COMMANDS",
-		commands = {
-			{name = "goto [player]", desc = "Teleport to a player", aliases = {"tp", "teleport"}},
-			{name = "speed [number]", desc = "Set walk speed", aliases = {"ws"}},
-			{name = "jump [number]", desc = "Set jump power", aliases = {"jp"}},
-			{name = "gravity [number]", desc = "Set workspace gravity", aliases = {"grav"}},
-			{name = "esp [player]", desc = "Toggle ESP on players", aliases = {"highlight"}},
-			{name = "time [number]", desc = "Set or check time of day"},
-			{name = "sit [player]", desc = "Make player(s) sit"},
-			{name = "unsit [player]", desc = "Make player(s) stand", aliases = {"stand"}},
-			{name = "spin [player]", desc = "Make player(s) spin"},
-			{name = "fly", desc = "Load flight/noclip system"}, 
-			{name = "noclip", desc = "Use ;fly command for noclip"}  
-		}
-	},
-	{
-		name = "ℹ️ INFO COMMANDS",
-		commands = {
-			{name = "commands", desc = "Show all commands", aliases = {"cmds", "help"}},
-			{name = "scripts", desc = "Show only script commands"},
-			{name = "clear", desc = "Clear notifications"},
-			{name = "hidegui", desc = "Toggle GUI visibility", aliases = {"gui"}},
-			{name = "prefix [char]", desc = "Change command prefix"},
-			{name = "reset", desc = "Reset your character", aliases = {"respawn"}},
-			{name = "serverhop", desc = "Hop to a different server", aliases = {"hop", "rejoin"}}
-		}
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = Color3.fromRGB(60, 60, 70)
+mainStroke.Thickness = 1
+mainStroke.Parent = mainFrame
+
+-- Title bar
+local titleBar = Instance.new("Frame", mainFrame)
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 32)
+titleBar.BackgroundTransparency = 1 -- Start transparent
+titleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+titleBar.BorderSizePixel = 0
+
+local titleBarCorner = Instance.new("UICorner")
+titleBarCorner.CornerRadius = UDim.new(0, 10)
+titleBarCorner.Parent = titleBar
+
+local titleLabel = Instance.new("TextLabel", titleBar)
+titleLabel.Name = "TitleLabel"
+titleLabel.Size = UDim2.new(0.7, -10, 1, 0)
+titleLabel.Position = UDim2.new(0, 10, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "Surface Script FLY & NOCLIP"
+titleLabel.TextColor3 = Color3.new(1, 1, 1)
+titleLabel.Font = Enum.Font.SourceSansSemibold
+titleLabel.TextSize = 16
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Window controls
+local minBtn = Instance.new("TextButton", titleBar)
+minBtn.Name = "Minimize"
+minBtn.Size = UDim2.new(0, 24, 0, 24)
+minBtn.Position = UDim2.new(1, -58, 0, 4)
+minBtn.BackgroundTransparency = 1
+minBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+minBtn.Text = "—"
+minBtn.Font = Enum.Font.SourceSansBold
+minBtn.TextSize = 16
+minBtn.TextColor3 = Color3.new(1, 1, 1)
+
+local minCorner = Instance.new("UICorner")
+minCorner.CornerRadius = UDim.new(0, 6)
+minCorner.Parent = minBtn
+
+local closeBtn = Instance.new("TextButton", titleBar)
+closeBtn.Name = "Close"
+closeBtn.Size = UDim2.new(0, 24, 0, 24)
+closeBtn.Position = UDim2.new(1, -28, 0, 4)
+closeBtn.BackgroundTransparency = 1
+closeBtn.BackgroundColor3 = Color3.fromRGB(206, 106, 101)
+closeBtn.Text = "✖️"
+closeBtn.Font = Enum.Font.SourceSansBold
+closeBtn.TextSize = 18
+closeBtn.TextColor3 = Color3.new(1, 1, 1)
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 6)
+closeCorner.Parent = closeBtn
+
+-- Main content area
+local body = Instance.new("Frame", mainFrame)
+body.Name = "Body"
+body.Size = UDim2.new(1, 0, 1, -32)
+body.Position = UDim2.new(0, 0, 0, 32)
+body.BackgroundTransparency = 1
+
+local controlsFrame = Instance.new("Frame", body)
+controlsFrame.Name = "Controls"
+controlsFrame.Size = UDim2.new(1, -16, 0, 160)
+controlsFrame.Position = UDim2.new(0, 8, 0, 8)
+controlsFrame.BackgroundTransparency = 1
+controlsFrame.Visible = true
+
+-- Create toggle button function
+local function createToggleButton(parent, y, labelText)
+	local row = Instance.new("Frame", parent)
+	row.Size = UDim2.new(1, 0, 0, 36)
+	row.Position = UDim2.new(0, 0, 0, y)
+	row.BackgroundTransparency = 1
+
+	local label = Instance.new("TextLabel", row)
+	label.Size = UDim2.new(0.6, 0, 1, 0)
+	label.Position = UDim2.new(0, 0, 0, 0)
+	label.BackgroundTransparency = 1
+	label.Text = labelText
+	label.TextColor3 = Color3.fromRGB(220, 220, 220)
+	label.Font = Enum.Font.SourceSansSemibold
+	label.TextSize = 20
+	label.TextXAlignment = Enum.TextXAlignment.Left
+
+	local toggle = Instance.new("TextButton", row)
+	toggle.Size = UDim2.new(0, 50, 0, 28)
+	toggle.Position = UDim2.new(1, -52, 0, 4)
+	toggle.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+	toggle.Text = "OFF"
+	toggle.Font = Enum.Font.SourceSansBold
+	toggle.TextSize = 13
+	toggle.TextColor3 = Color3.new(1, 1, 1)
+
+	local toggleCorner = Instance.new("UICorner")
+	toggleCorner.CornerRadius = UDim.new(0, 6)
+	toggleCorner.Parent = toggle
+
+	-- Hover effects
+	toggle.MouseEnter:Connect(function()
+		toggle.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+	end)
+
+	toggle.MouseLeave:Connect(function()
+		if toggle.Text == "OFF" then
+			toggle.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+		else
+			toggle.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
+		end
+	end)
+
+	return row, label, toggle
+end
+
+-- Create slider function
+local function createSliderRow(parent, y, labelText, default)
+	local row = Instance.new("Frame", parent)
+	row.Size = UDim2.new(1, 0, 0, 36)
+	row.Position = UDim2.new(0, 0, 0, y)
+	row.BackgroundTransparency = 1
+
+	local label = Instance.new("TextLabel", row)
+	label.Size = UDim2.new(0, 70, 1, 0)
+	label.Position = UDim2.new(0, 0, 0, 0)
+	label.BackgroundTransparency = 1
+	label.Text = labelText
+	label.TextColor3 = Color3.fromRGB(220, 220, 220)
+	label.Font = Enum.Font.SourceSans
+	label.TextSize = 20
+	label.TextXAlignment = Enum.TextXAlignment.Left
+
+	local track = Instance.new("Frame", row)
+	track.Size = UDim2.new(1, -140, 0, 8)
+	track.Position = UDim2.new(0, 80, 0, 14)
+	track.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+	track.BorderSizePixel = 0
+
+	local trackCorner = Instance.new("UICorner")
+	trackCorner.CornerRadius = UDim.new(0, 4)
+	trackCorner.Parent = track
+
+	local fill = Instance.new("Frame", track)
+	fill.Size = UDim2.new((default or 0) / MAX_VALUE, 0, 1, 0)
+	fill.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
+	fill.BorderSizePixel = 0
+
+	local fillCorner = Instance.new("UICorner")
+	fillCorner.CornerRadius = UDim.new(0, 4)
+	fillCorner.Parent = fill
+
+	local knob = Instance.new("ImageButton", track)
+	knob.Size = UDim2.new(0, 16, 0, 16)
+	knob.AnchorPoint = Vector2.new(0.5, 0.5)
+	knob.Position = UDim2.new((default or 0) / MAX_VALUE, 0, 0.5, 0)
+	knob.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+	knob.BorderSizePixel = 0
+	knob.AutoButtonColor = false
+
+	local knobCorner = Instance.new("UICorner")
+	knobCorner.CornerRadius = UDim.new(0, 8)
+	knobCorner.Parent = knob
+
+	local valueBox = Instance.new("TextBox", row)
+	valueBox.Size = UDim2.new(0, 50, 0, 24)
+	valueBox.Position = UDim2.new(1, -52, 0, 6)
+	valueBox.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+	valueBox.Text = tostring(default or 0)
+	valueBox.ClearTextOnFocus = false
+	valueBox.Font = Enum.Font.SourceSans
+	valueBox.TextSize = 13
+	valueBox.TextColor3 = Color3.new(1, 1, 1)
+	valueBox.TextXAlignment = Enum.TextXAlignment.Center
+
+	local boxCorner = Instance.new("UICorner")
+	boxCorner.CornerRadius = UDim.new(0, 6)
+	boxCorner.Parent = valueBox
+
+	return {
+		Row = row,
+		Label = label,
+		ValueBox = valueBox,
+		Track = track,
+		Fill = fill,
+		Knob = knob,
+		Value = default or 0,
+		Dragging = false,
+		SavedValue = default or 0
 	}
-}
+end
 
-------------------------------------------------
--- STATE
-------------------------------------------------
-local menuOpen = true
-local animating = false
-local activePopup = nil
-local activePopupName = nil
+-- Create control rows
+local noclipRow, noclipLabel, noclipToggle = createToggleButton(controlsFrame, 0, "NoClip")
+local flyRow, flyLabel, flyToggle = createToggleButton(controlsFrame, 40, "Fly")
+local speedRow = createSliderRow(controlsFrame, 80, "Speed", GAME_DEFAULT_WALKSPEED)
+speedRow.Row.Visible = false
 
-local function closeActivePopup()
-	if activePopup then
-		activePopup:Destroy()
-		activePopup = nil
-		activePopupName = nil
-		blur.Size = 0
+-- Control buttons
+local buttonFrame = Instance.new("Frame", controlsFrame)
+buttonFrame.Size = UDim2.new(1, 0, 0, 32)
+buttonFrame.Position = UDim2.new(0, 0, 0, 120)
+buttonFrame.BackgroundTransparency = 1
+
+local deactivateBtn = Instance.new("TextButton", buttonFrame)
+deactivateBtn.Size = UDim2.new(0, 90, 0, 28)
+deactivateBtn.Position = UDim2.new(0, 0, 0, 0)
+deactivateBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+deactivateBtn.Text = "Deactivate"
+deactivateBtn.Font = Enum.Font.SourceSansSemibold
+deactivateBtn.TextSize = 14
+deactivateBtn.TextColor3 = Color3.new(1, 1, 1)
+
+local deactivateCorner = Instance.new("UICorner")
+deactivateCorner.CornerRadius = UDim.new(0, 6)
+deactivateCorner.Parent = deactivateBtn
+
+local revertBtn = Instance.new("TextButton", buttonFrame)
+revertBtn.Size = UDim2.new(0, 70, 0, 28)
+revertBtn.Position = UDim2.new(0, 96, 0, 0)
+revertBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+revertBtn.Text = "Revert"
+revertBtn.Font = Enum.Font.SourceSansSemibold
+revertBtn.TextSize = 14
+revertBtn.TextColor3 = Color3.new(1, 1, 1)
+revertBtn.Visible = false
+
+local revertCorner = Instance.new("UICorner")
+revertCorner.CornerRadius = UDim.new(0, 6)
+revertCorner.Parent = revertBtn
+
+-- Hover effects for buttons
+local function setupButtonHoverEffects(button)
+	button.MouseEnter:Connect(function()
+		local originalColor = button.BackgroundColor3
+		button.BackgroundColor3 = originalColor:Lerp(Color3.new(1, 1, 1), 0.1)
+	end)
+
+	button.MouseLeave:Connect(function()
+		local originalColor = button.BackgroundColor3:Lerp(Color3.new(0, 0, 0), 0.1)
+		button.BackgroundColor3 = originalColor
+	end)
+end
+
+setupButtonHoverEffects(deactivateBtn)
+setupButtonHoverEffects(revertBtn)
+setupButtonHoverEffects(closeBtn)
+setupButtonHoverEffects(minBtn)
+setupButtonHoverEffects(noclipToggle)
+setupButtonHoverEffects(flyToggle)
+
+-- Animation Functions
+local function animateButtonPress(button)
+	local originalSize = button.Size
+	button.MouseButton1Down:Connect(function()
+		local pressedSize = UDim2.new(
+			originalSize.X.Scale,
+			originalSize.X.Offset * 0.95,
+			originalSize.Y.Scale,
+			originalSize.Y.Offset * 0.95
+		)
+
+		local tween = TweenService:Create(
+			button,
+			TweenInfo.new(0.1, EASING_STYLE, EASING_DIRECTION),
+			{Size = pressedSize}
+		)
+		tween:Play()
+	end)
+
+	button.MouseButton1Up:Connect(function()
+		local tween = TweenService:Create(
+			button,
+			TweenInfo.new(0.15, EASING_STYLE, EASING_DIRECTION),
+			{Size = originalSize}
+		)
+		tween:Play()
+	end)
+
+	button.MouseLeave:Connect(function()
+		local tween = TweenService:Create(
+			button,
+			TweenInfo.new(0.15, EASING_STYLE, EASING_DIRECTION),
+			{Size = originalSize}
+		)
+		tween:Play()
+	end)
+end
+
+local function animateKnobPress(knob)
+	knob.MouseButton1Down:Connect(function()
+		local originalSize = knob.Size
+		local pressedSize = UDim2.new(0, 14, 0, 14)
+
+		local tween = TweenService:Create(
+			knob,
+			TweenInfo.new(0.1, EASING_STYLE, EASING_DIRECTION),
+			{Size = pressedSize}
+		)
+		tween:Play()
+	end)
+
+	knob.MouseButton1Up:Connect(function()
+		local originalSize = knob.Size
+		local normalSize = UDim2.new(0, 16, 0, 16)
+
+		local tween = TweenService:Create(
+			knob,
+			TweenInfo.new(0.15, EASING_STYLE, EASING_DIRECTION),
+			{Size = normalSize}
+		)
+		tween:Play()
+	end)
+end
+
+-- Apply animations to buttons
+animateButtonPress(minBtn)
+animateButtonPress(closeBtn)
+animateButtonPress(deactivateBtn)
+animateButtonPress(revertBtn)
+animateButtonPress(noclipToggle)
+animateButtonPress(flyToggle)
+animateKnobPress(speedRow.Knob)
+
+-- GUI Dragging
+local isDraggingGUI = false
+local dragStartMouse = Vector2.new()
+local dragStartPos = Vector2.new()
+
+local function clampPositionToScreen(px, py)
+	local cam = workspace.CurrentCamera
+	if not cam then return px, py end
+	local view = cam.ViewportSize
+	local maxX = math.max(0, view.X - mainFrame.AbsoluteSize.X)
+	local maxY = math.max(0, view.Y - mainFrame.AbsoluteSize.Y)
+	return math.clamp(px, 0, maxX), math.clamp(py, 0, maxY)
+end
+
+-- Title bar dragging
+titleBar.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		isDraggingGUI = true
+		local pos = input.Position or UserInputService:GetMouseLocation()
+		dragStartMouse = Vector2.new(pos.X, pos.Y)
+		dragStartPos = Vector2.new(mainFrame.AbsolutePosition.X, mainFrame.AbsolutePosition.Y)
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				isDraggingGUI = false
+			end
+		end)
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if not isDraggingGUI then return end
+	if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+
+	local pos = input.Position or UserInputService:GetMouseLocation()
+	local m = Vector2.new(pos.X, pos.Y)
+	local delta = m - dragStartMouse
+	local newPos = dragStartPos + delta
+	local nx, ny = clampPositionToScreen(newPos.X, newPos.Y)
+	mainFrame.Position = UDim2.new(0, nx, 0, ny)
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		isDraggingGUI = false
+	end
+end)
+
+-- Slider functionality
+local function enableSliderDrag(slider)
+	local track, knob = slider.Track, slider.Knob
+	local dragging = false
+	local lastValue = slider.Value
+
+	knob.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			lastValue = slider.Value
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+
+	track.InputBegan:Connect(function(input)
+		if not (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then return end
+
+		local pos = input.Position or UserInputService:GetMouseLocation()
+		local mx = pos.X
+		local rel = math.clamp((mx - track.AbsolutePosition.X) / math.max(1, track.AbsoluteSize.X), 0, 1)
+		local raw = rel * MAX_VALUE
+		local value = math.floor((raw + SNAP/2) / SNAP) * SNAP
+
+		if value ~= lastValue then
+			slider.Value = value
+			slider.SavedValue = value
+			slider.Fill.Size = UDim2.new(value / MAX_VALUE, 0, 1, 0)
+			slider.Knob.Position = UDim2.new(value / MAX_VALUE, 0, 0.5, 0)
+
+			if not slider.ValueBox:IsFocused() then
+				slider.ValueBox.Text = tostring(value)
+			end
+			lastValue = value
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if not dragging then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+
+		local pos = input.Position or UserInputService:GetMouseLocation()
+		local mx = pos.X
+		local rel = math.clamp((mx - track.AbsolutePosition.X) / math.max(1, track.AbsoluteSize.X), 0, 1)
+		local raw = rel * MAX_VALUE
+		local value = math.floor((raw + SNAP/2) / SNAP) * SNAP
+
+		if value ~= lastValue then
+			slider.Value = value
+			slider.SavedValue = value
+			slider.Fill.Size = UDim2.new(value / MAX_VALUE, 0, 1, 0)
+			slider.Knob.Position = UDim2.new(value / MAX_VALUE, 0, 0.5, 0)
+
+			if not slider.ValueBox:IsFocused() then
+				slider.ValueBox.Text = tostring(value)
+			end
+			lastValue = value
+		end
+	end)
+end
+
+enableSliderDrag(speedRow)
+
+-- Text box filtering
+local function sanitizeNumberStringAllowDot(s)
+	local cleaned = s:gsub("[^%d%.]", "")
+	local firstDot = cleaned:find("%.")
+	if firstDot then
+		local before = cleaned:sub(1, firstDot)
+		local after = cleaned:sub(firstDot + 1):gsub("%.", "")
+		cleaned = before .. after
+	end
+	if cleaned == "" then return nil end
+	local n = tonumber(cleaned)
+	return n, cleaned
+end
+
+local function liveFilterDigitsAndDot(box)
+	box:GetPropertyChangedSignal("Text"):Connect(function()
+		local text = box.Text or ""
+		local cleaned = text:gsub("[^%d%.]", "")
+		local firstDot = cleaned:find("%.")
+		if firstDot then
+			local before = cleaned:sub(1, firstDot)
+			local after = cleaned:sub(firstDot + 1):gsub("%.", "")
+			cleaned = before .. after
+		end
+		if cleaned ~= text then
+			local cur = 1
+			pcall(function() cur = box.CursorPosition end)
+			local removed = text:len() - cleaned:len()
+			box.Text = cleaned
+			pcall(function()
+				local newCur = math.clamp(cur - removed, 1, math.max(1, #cleaned + 1))
+				box.CursorPosition = newCur
+			end)
+		end
+	end)
+end
+
+local function hookValueBox(slider)
+	local box = slider.ValueBox
+	liveFilterDigitsAndDot(box)
+
+	box.FocusLost:Connect(function()
+		local txt = box.Text or ""
+		local num, cleaned = sanitizeNumberStringAllowDot(txt)
+		if not num then
+			box.Text = tostring(slider.SavedValue)
+			slider.Value = slider.SavedValue
+			slider.Fill.Size = UDim2.new(slider.SavedValue / MAX_VALUE, 0, 1, 0)
+			slider.Knob.Position = UDim2.new(slider.SavedValue / MAX_VALUE, 0, 0.5, 0)
+			return
+		end
+
+		local clamped = math.clamp(num, 0, MAX_VALUE)
+		if clamped ~= num then
+			box.Text = tostring(slider.SavedValue)
+			slider.Value = slider.SavedValue
+			slider.Fill.Size = UDim2.new(slider.SavedValue / MAX_VALUE, 0, 1, 0)
+			slider.Knob.Position = UDim2.new(slider.SavedValue / MAX_VALUE, 0, 0.5, 0)
+			return
+		end
+
+		slider.Value = clamped
+		slider.SavedValue = clamped
+		slider.Fill.Size = UDim2.new(clamped / MAX_VALUE, 0, 1, 0)
+		slider.Knob.Position = UDim2.new(clamped / MAX_VALUE, 0, 0.5, 0)
+		box.Text = tostring(clamped)
+	end)
+end
+
+hookValueBox(speedRow)
+
+-- Flight and noclip variables
+local flyEnabled = false
+local noclipEnabled = false
+local deactivated = false
+local bv, bg
+
+local function cleanupFlyObjects()
+	if bv and bv.Parent then pcall(function() bv:Destroy() end) end
+	if bg and bg.Parent then pcall(function() bg:Destroy() end) end
+	bv, bg = nil, nil
+
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hum then
+		pcall(function() hum.PlatformStand = false end)
+		pcall(function() hum:ChangeState(Enum.HumanoidStateType.Running) end)
+		pcall(function() hum.WalkSpeed = GAME_DEFAULT_WALKSPEED end)
 	end
 end
 
-------------------------------------------------
--- SOUND SYSTEM
-------------------------------------------------
-local function playButtonSound()
-	local sound = Instance.new("Sound")
-	sound.SoundId = "rbxassetid://90698049598280"
-	sound.Volume = 0.3
-	sound.Parent = SoundService
-	sound:Play()
-	game:GetService("Debris"):AddItem(sound, 5)
+-- Noclip system
+local noclipLoopRunning = false
+local NOCOLLIC_INTERVAL = 0.3
+
+local function RestoreCollisions()
+	local plr = player
+	if not plr or not plr.Character then return end
+	for i, v in pairs(plr.Character:GetDescendants()) do
+		if v:IsA("BasePart") and v.CanCollide == false then
+			pcall(function() v.CanCollide = true end)
+		end
+	end
 end
 
-local function playNotificationSound()
-	local sound = Instance.new("Sound")
-	sound.SoundId = "rbxassetid://99584768688906"
-	sound.Volume = 0.3
-	sound.Parent = SoundService
-	sound:Play()
-	game:GetService("Debris"):AddItem(sound, 5)
+local function applyNoclipToCharacterParts(char)
+	if not char then return end
+	for _, v in pairs(char:GetDescendants()) do
+		if v:IsA("BasePart") then
+			pcall(function() v.CanCollide = false end)
+		end
+	end
 end
 
-------------------------------------------------
--- NOTIFICATION SYSTEM
-------------------------------------------------
-local activeNotifications = {}
-local notificationYOffset = 20
-local notificationSpacing = 110
+local function startNoclipLoop()
+	if noclipLoopRunning then return end
+	noclipLoopRunning = true
 
-local function showNotification(header, message)
-	playNotificationSound()
-
-	local notificationIndex = #activeNotifications
-	local targetY = notificationYOffset + (notificationIndex * notificationSpacing)
-
-	local notification = Instance.new("Frame")
-	notification.Size = UDim2.new(0, 340, 0, 90)
-	notification.Position = UDim2.new(1, 350, 0, targetY)
-	notification.AnchorPoint = Vector2.new(1, 0)
-	notification.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-	notification.BackgroundTransparency = 0.2
-	notification.Parent = gui
-	notification.ZIndex = 10
-
-	local uiCorner = Instance.new("UICorner")
-	uiCorner.CornerRadius = UDim.new(0, 12)
-	uiCorner.Parent = notification
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = Color3.fromRGB(70, 70, 70)
-	stroke.Thickness = 1
-	stroke.Parent = notification
-
-	local headerLabel = Instance.new("TextLabel")
-	headerLabel.Size = UDim2.new(1, -50, 0, 28)
-	headerLabel.Position = UDim2.new(0, 12, 0, 10)
-	headerLabel.BackgroundTransparency = 1
-	headerLabel.Text = header
-	headerLabel.Font = Enum.Font.GothamBold
-	headerLabel.TextSize = 16
-	headerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	headerLabel.TextXAlignment = Enum.TextXAlignment.Left
-	headerLabel.TextYAlignment = Enum.TextYAlignment.Center
-	headerLabel.Parent = notification
-	headerLabel.ZIndex = 11
-
-	local messageLabel = Instance.new("TextLabel")
-	messageLabel.Size = UDim2.new(1, -24, 0, 42)
-	messageLabel.Position = UDim2.new(0, 12, 0, 40)
-	messageLabel.BackgroundTransparency = 1
-	messageLabel.TextWrapped = true
-	messageLabel.Text = message
-	messageLabel.Font = Enum.Font.Gotham
-	messageLabel.TextSize = 13
-	messageLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
-	messageLabel.TextXAlignment = Enum.TextXAlignment.Left
-	messageLabel.TextYAlignment = Enum.TextYAlignment.Top
-	messageLabel.Parent = notification
-	messageLabel.ZIndex = 11
-
-	local closeNotif = Instance.new("TextButton")
-	closeNotif.Size = UDim2.new(0, 28, 0, 28)
-	closeNotif.Position = UDim2.new(1, -36, 0, 10)
-	closeNotif.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-	closeNotif.Text = "×"
-	closeNotif.Font = Enum.Font.GothamBold
-	closeNotif.TextSize = 22
-	closeNotif.TextColor3 = Color3.new(1, 1, 1)
-	closeNotif.Parent = notification
-	closeNotif.ZIndex = 11
-
-	local closeCorner = Instance.new("UICorner")
-	closeCorner.CornerRadius = UDim.new(0, 8)
-	closeCorner.Parent = closeNotif
-
-	closeNotif.MouseEnter:Connect(function()
-		TweenService:Create(closeNotif, TweenInfo.new(0.15), {
-			BackgroundColor3 = Color3.fromRGB(90, 90, 90)
-		}):Play()
-	end)
-
-	closeNotif.MouseLeave:Connect(function()
-		TweenService:Create(closeNotif, TweenInfo.new(0.15), {
-			BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-		}):Play()
-	end)
-
-	local function removeNotification()
-		TweenService:Create(notification, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {
-			Position = UDim2.new(1, 350, 0, targetY),
-			BackgroundTransparency = 1
-		}):Play()
-
-		task.wait(0.35)
-		notification:Destroy()
-
-		for i, notif in ipairs(activeNotifications) do
-			if notif == notification then
-				table.remove(activeNotifications, i)
+	spawn(function()
+		while noclipLoopRunning do
+			if not noclipEnabled or deactivated then
+				local c = player.Character
+				if c then RestoreCollisions() end
+				noclipLoopRunning = false
 				break
 			end
-		end
 
-		for i, notif in ipairs(activeNotifications) do
-			local newY = notificationYOffset + ((i-1) * notificationSpacing)
-			TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quint), {
-				Position = UDim2.new(1, -20, 0, newY)
-			}):Play()
-		end
-	end
+			local c = player.Character
+			if c then
+				applyNoclipToCharacterParts(c)
+			end
 
-	closeNotif.MouseButton1Click:Connect(removeNotification)
-
-	table.insert(activeNotifications, notification)
-
-	TweenService:Create(notification, TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-		Position = UDim2.new(1, -20, 0, targetY)
-	}):Play()
-
-	local autoClose = task.delay(7, function()
-		if notification and notification.Parent then
-			removeNotification()
+			wait(NOCOLLIC_INTERVAL)
 		end
 	end)
-
-	return notification
 end
 
-------------------------------------------------
--- BAR (Initially hidden for animation)
-------------------------------------------------
-local bar = Instance.new("Frame")
-bar.Size = UDim2.new(0, 640, 0, 80)
-bar.Position = UDim2.new(0.5, 0, 1, 90) -- Start hidden below screen
-bar.AnchorPoint = Vector2.new(0.5, 1)
-bar.BackgroundColor3 = Color3.fromRGB(20,20,20)
-bar.BackgroundTransparency = 0.15
-bar.Parent = gui
-Instance.new("UICorner", bar).CornerRadius = UDim.new(0,22)
+local function stopNoclipLoop()
+	noclipLoopRunning = false
+	local c = player.Character
+	if c then RestoreCollisions() end
+end
 
-------------------------------------------------
--- COMMAND BAR (Aligned with icons)
-------------------------------------------------
-local commandBarContainer = Instance.new("Frame")
-commandBarContainer.Size = UDim2.new(0, 225, 0, 46)  -- Changed from 200 to 180
-commandBarContainer.Position = UDim2.new(0, 310, 0.5, 0)  -- CHANGED: X = 310
-commandBarContainer.AnchorPoint = Vector2.new(0, 0.5)  -- CHANGED: Anchor to left
-commandBarContainer.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-commandBarContainer.BackgroundTransparency = 0.1
-commandBarContainer.Parent = bar
-Instance.new("UICorner", commandBarContainer).CornerRadius = UDim.new(0, 12)
+local function enableNoclip(enable)
+	noclipEnabled = enable
+	noclipToggle.Text = enable and "ON" or "OFF"
 
-local commandBar = Instance.new("TextBox")
-commandBar.Size = UDim2.new(1, -20, 1, -10)
-commandBar.Position = UDim2.new(0, 10, 0, 5)
-commandBar.BackgroundTransparency = 1
-commandBar.TextColor3 = Color3.fromRGB(255, 255, 255)
-commandBar.Text = ""
-commandBar.PlaceholderText = "Type ;help for list"
-commandBar.Font = Enum.Font.Gotham
-commandBar.TextSize = 14
-commandBar.TextXAlignment = Enum.TextXAlignment.Left
-commandBar.Parent = commandBarContainer
-
-------------------------------------------------
--- ARROW (Initially hidden for animation)
-------------------------------------------------
-local arrow = Instance.new("TextButton")
-arrow.Size = UDim2.new(0,40,0,24)
-arrow.AnchorPoint = Vector2.new(0.5,1)
-arrow.Position = UDim2.new(0.5,0,1,-28) -- Start at edge position
-arrow.BackgroundColor3 = Color3.fromRGB(45,45,45)
-arrow.Text = "🔽"
-arrow.Font = Enum.Font.GothamBold
-arrow.TextSize = 18
-arrow.TextColor3 = Color3.new(1,1,1)
-arrow.Parent = gui
-Instance.new("UICorner", arrow).CornerRadius = UDim.new(1,0)
-
-------------------------------------------------
--- LIVE TIME
-------------------------------------------------
-local timeLabel = Instance.new("TextLabel")
-timeLabel.Size = UDim2.new(0,80,1,0)
-timeLabel.Position = UDim2.new(0,16,0,0)
-timeLabel.BackgroundTransparency = 1
-timeLabel.Font = Enum.Font.GothamBold
-timeLabel.TextSize = 20
-timeLabel.TextColor3 = Color3.new(1,1,1)
-timeLabel.TextXAlignment = Enum.TextXAlignment.Left
-timeLabel.Parent = bar
-
-RunService.Heartbeat:Connect(function()
-	timeLabel.Text = os.date("%H:%M")
-end)
-
-------------------------------------------------
--- ICON CREATOR
-------------------------------------------------
-local function icon(color, text, x, callback)
-	local b = Instance.new("TextButton")
-	b.Size = UDim2.new(0,46,0,46)
-	b.Position = UDim2.new(0,x,0.5,-23)
-	b.BackgroundColor3 = color
-	b.Text = text
-	b.Font = Enum.Font.GothamBold
-	b.TextSize = 22
-	b.TextColor3 = Color3.new(1,1,1)
-	b.Parent = bar
-	Instance.new("UICorner", b).CornerRadius = UDim.new(0,14)
-
-	b.MouseEnter:Connect(function()
-		TweenService:Create(b, TweenInfo.new(0.15), {
-			BackgroundTransparency = 0
-		}):Play()
-	end)
-
-	b.MouseLeave:Connect(function()
-		TweenService:Create(b, TweenInfo.new(0.15), {
-			BackgroundTransparency = 0.15
-		}):Play()
-	end)
-
-	if callback then 
-		b.MouseButton1Click:Connect(function()
-			playButtonSound()
-			callback()
-		end) 
+	if enable then
+		noclipToggle.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
+		startNoclipLoop()
+	else
+		noclipToggle.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+		stopNoclipLoop()
 	end
 end
 
-------------------------------------------------
--- POPUP SYSTEM
-------------------------------------------------
-local function openPopup(name, titleText, build)
-	if activePopupName == name then
-		closeActivePopup()
+-- Flight system
+local function enableFlyObjects(enable)
+	local char = player.Character
+	if not char then return end
+
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hrp or not hum then return end
+
+	if not enable then
+		cleanupFlyObjects()
 		return
 	end
 
-	closeActivePopup()
-	activePopupName = name
-	blur.Size = 18
+	cleanupFlyObjects()
 
-	local p = Instance.new("Frame")
-	p.Size = UDim2.new(0,440,0,360)
-	p.Position = UDim2.new(0.5,0,0.5,30)
-	p.AnchorPoint = Vector2.new(0.5,0.5)
-	p.BackgroundColor3 = Color3.fromRGB(30,30,30)
-	p.BackgroundTransparency = 0.25
-	p.Parent = gui
-	Instance.new("UICorner", p).CornerRadius = UDim.new(0,22)
+	bv = Instance.new("BodyVelocity")
+	bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+	bv.Velocity = Vector3.new(0, 0, 0)
+	bv.P = 9e4
+	bv.Parent = hrp
 
-	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1,-30,0,40)
-	title.Position = UDim2.new(0,15,0,15)
-	title.BackgroundTransparency = 1
-	title.Text = titleText
-	title.Font = Enum.Font.GothamBold
-	title.TextSize = 22
-	title.TextColor3 = Color3.new(1,1,1)
-	title.Parent = p
+	bg = Instance.new("BodyGyro")
+	bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+	bg.P = 9e4
+	bg.CFrame = hrp.CFrame
+	bg.Parent = hrp
 
-	build(p)
-
-	TweenService:Create(p, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {
-		Position = UDim2.new(0.5,0,0.5,0)
-	}):Play()
-
-	activePopup = p
+	pcall(function() hum.PlatformStand = true end)
 end
 
-------------------------------------------------
--- HOME
-------------------------------------------------
-icon(Color3.fromRGB(120,90,200), "ℹ️", 140, function()
-	openPopup("Home", "Information About User Interface", function(p)
-		local body = Instance.new("TextLabel")
-		body.Size = UDim2.new(1,-30,0,140)
-		body.Position = UDim2.new(0,15,0,70)
-		body.BackgroundTransparency = 1
-		body.TextWrapped = true
-		body.TextYAlignment = Enum.TextYAlignment.Top
-		body.Text = "Hi this bar is experimental and from Surface Script!\n\nNone of this is written by a human since I don't know how to code.\n\nIT IS ALL GENERATED BY AI !!!\n\nUse the command bar on the right for admin commands."
-		body.Font = Enum.Font.Gotham
-		body.TextSize = 18
-		body.TextColor3 = Color3.new(1,1,1)
-		body.Parent = p
+-- Toggle functions
+local function setNoclip(on)
+	enableNoclip(on)
+end
 
-		local close = Instance.new("TextButton")
-		close.Size = UDim2.new(1,-30,0,44)
-		close.Position = UDim2.new(0,15,1,-60)
-		close.BackgroundColor3 = Color3.fromRGB(90,90,90)
-		close.Text = "Close"
-		close.Font = Enum.Font.GothamBold
-		close.TextSize = 18
-		close.TextColor3 = Color3.new(1,1,1)
-		close.Parent = p
-		Instance.new("UICorner", close).CornerRadius = UDim.new(0,14)
+local function setFly(on)
+	flyEnabled = on
+	flyToggle.Text = on and "ON" or "OFF"
+	speedRow.Row.Visible = on
 
-		close.MouseButton1Click:Connect(function()
-			playButtonSound()
-			closeActivePopup()
-		end)
-	end)
+	if on then
+		flyToggle.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
+	else
+		flyToggle.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+	end
+
+	if deactivated then
+		if not on then cleanupFlyObjects() end
+		return
+	end
+
+	if on then
+		enableFlyObjects(true)
+	else
+		enableFlyObjects(false)
+		local char = player.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if hum then pcall(function() hum.WalkSpeed = GAME_DEFAULT_WALKSPEED end) end
+	end
+end
+
+-- Button click events
+noclipToggle.MouseButton1Click:Connect(function()
+	setNoclip(not noclipEnabled)
 end)
 
-------------------------------------------------
--- PEOPLE
-------------------------------------------------
-icon(Color3.fromRGB(80,140,255), "🔄️", 196, function()
-	playButtonSound()
-	loadstring(game:HttpGet("https://pastefy.app/qezozgw3/raw"))()
+flyToggle.MouseButton1Click:Connect(function()
+	setFly(not flyEnabled)
 end)
 
-------------------------------------------------
--- S (RESERVED)
-------------------------------------------------
-icon(Color3.fromRGB(220,80,80), "📜", 252, function()
-	openPopup("WIP", "Work In Progress", function(p)
-		local body = Instance.new("TextLabel")
-		body.Size = UDim2.new(1,-30,0,120)
-		body.Position = UDim2.new(0,15,0,70)
-		body.BackgroundTransparency = 1
-		body.TextWrapped = true
-		body.TextYAlignment = Enum.TextYAlignment.Top
-		body.Text = "Hey! The admin command line used to be an external script.\n\nNow it is intergrated into the bar!\n\nIf you want to execute the external version go ahead. As you know, it's all generated by AI."
-		body.Font = Enum.Font.Gotham
-		body.TextSize = 18
-		body.TextColor3 = Color3.new(1,1,1)
-		body.Parent = p
+deactivateBtn.MouseButton1Click:Connect(function()
+	deactivated = not deactivated
 
-		local executeButton = Instance.new("TextButton")
-		executeButton.Size = UDim2.new(1,-30,0,44)
-		executeButton.Position = UDim2.new(0,15,1,-110)
-		executeButton.BackgroundColor3 = Color3.fromRGB(150, 100, 220)
-		executeButton.Text = "Execute External ADMIN Script"
-		executeButton.Font = Enum.Font.GothamBold
-		executeButton.TextSize = 18
-		executeButton.TextColor3 = Color3.new(1,1,1)
-		executeButton.Parent = p
-		Instance.new("UICorner", executeButton).CornerRadius = UDim.new(0,14)
+	if deactivated then
+		deactivateBtn.Text = "Activate"
+		deactivateBtn.BackgroundColor3 = Color3.fromRGB(200, 80, 80)
 
-		executeButton.MouseButton1Click:Connect(function()
-			playButtonSound()
-			closeActivePopup()
+		local char = player.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if hum then pcall(function() hum.WalkSpeed = GAME_DEFAULT_WALKSPEED end) end
 
-			openPopup("ConfirmExec", "Confirm Execution", function(cp)
-				local msg = Instance.new("TextLabel")
-				msg.Size = UDim2.new(1,-30,0,100)
-				msg.Position = UDim2.new(0,15,0,80)
-				msg.BackgroundTransparency = 1
-				msg.TextWrapped = true
-				msg.Text = "Are you sure you want to execute the External Admin Script? Still WIP btw. \n\nThis will load external scripts from the internet. Once again, the script is AI generated."
-				msg.Font = Enum.Font.Gotham
-				msg.TextSize = 18
-				msg.TextColor3 = Color3.new(1,1,1)
-				msg.Parent = cp
-
-				local confirm = Instance.new("TextButton")
-				confirm.Size = UDim2.new(1,-30,0,44)
-				confirm.Position = UDim2.new(0,15,1,-60)
-				confirm.BackgroundColor3 = Color3.fromRGB(150, 100, 220)
-				confirm.Text = "Execute External Script"
-				confirm.Font = Enum.Font.GothamBold
-				confirm.TextSize = 18
-				confirm.TextColor3 = Color3.new(1,1,1)
-				confirm.Parent = cp
-				Instance.new("UICorner", confirm).CornerRadius = UDim.new(0,14)
-
-				local nah = Instance.new("TextButton")
-				nah.Size = UDim2.new(1,-30,0,44)
-				nah.Position = UDim2.new(0,15,1,-110)
-				nah.BackgroundColor3 = Color3.fromRGB(90,90,90)
-				nah.Text = "Fuh Nah 💔🥀"
-				nah.Font = Enum.Font.GothamBold
-				nah.TextSize = 18
-				nah.TextColor3 = Color3.new(1,1,1)
-				nah.Parent = cp
-				Instance.new("UICorner", nah).CornerRadius = UDim.new(0,14)
-
-				nah.MouseButton1Click:Connect(function()
-					playButtonSound()
-					closeActivePopup()
-				end)
-
-				confirm.MouseButton1Click:Connect(function()
-					playButtonSound()
-					closeActivePopup()
-					showNotification("Admin WIP Script should be Executed!", "Look on the bottom for an arrow. Use the ;commands for list of commands and ;scripts for weird stuff. BTW IT IS NOT WORKING FOR PC")
-					loadstring(game:HttpGet("https://pastefy.app/8LvvYz4h/raw"))()
-				end)
-			end)
-		end)
-
-		local close = Instance.new("TextButton")
-		close.Size = UDim2.new(1,-30,0,44)
-		close.Position = UDim2.new(0,15,1,-60)
-		close.BackgroundColor3 = Color3.fromRGB(90,90,90)
-		close.Text = "Close"
-		close.Font = Enum.Font.GothamBold
-		close.TextSize = 18
-		close.TextColor3 = Color3.new(1,1,1)
-		close.Parent = p
-		Instance.new("UICorner", close).CornerRadius = UDim.new(0,14)
-
-		close.MouseButton1Click:Connect(function()
-			playButtonSound()
-			closeActivePopup()
-		end)
-	end)
-end)
-
-------------------------------------------------
--- SETTINGS
-------------------------------------------------
-icon(Color3.fromRGB(60,60,60), "⚙", 575, function()
-	openPopup("Settings", "Settings", function(p)
-
-		local desc = Instance.new("TextLabel")
-		desc.Size = UDim2.new(1,-30,0,40)
-		desc.Position = UDim2.new(0,15,0,60)
-		desc.BackgroundTransparency = 1
-		desc.TextWrapped = true
-		desc.Text = "Change the color of the bottom control bar."
-		desc.Font = Enum.Font.Gotham
-		desc.TextSize = 16
-		desc.TextColor3 = Color3.fromRGB(200,200,200)
-		desc.Parent = p
-
-		local grid = Instance.new("Frame")
-		grid.Size = UDim2.new(1,-30,0,120)
-		grid.Position = UDim2.new(0,15,0,105)
-		grid.BackgroundTransparency = 1
-		grid.Parent = p
-
-		local layout = Instance.new("UIGridLayout")
-		layout.CellSize = UDim2.new(0,48,0,48)
-		layout.CellPadding = UDim2.new(0,14,0,14)
-		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		layout.Parent = grid
-
-		local colors = {
-			Color3.fromRGB(200,70,70),
-			Color3.fromRGB(70,130,220),
-			Color3.fromRGB(150,100,220),
-			Color3.fromRGB(220,200,80),
-			Color3.fromRGB(90,180,120),
-			Color3.fromRGB(220,120,160),
-			Color3.fromRGB(20,20,20)
-		}
-
-		for _,c in ipairs(colors) do
-			local b = Instance.new("TextButton")
-			b.BackgroundColor3 = c
-			b.Text = ""
-			b.Parent = grid
-			Instance.new("UICorner", b).CornerRadius = UDim.new(1,0)
-			b.MouseButton1Click:Connect(function()
-				playButtonSound()
-				bar.BackgroundColor3 = c
-			end)
+		if noclipEnabled then
+			noclipEnabled = false
+			stopNoclipLoop()
+			noclipToggle.Text = "OFF"
+			noclipToggle.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
 		end
 
-		local closeSettings = Instance.new("TextButton")
-		closeSettings.Size = UDim2.new(1,-30,0,44)
-		closeSettings.Position = UDim2.new(0,15,1,-110)
-		closeSettings.BackgroundColor3 = Color3.fromRGB(90,90,90)
-		closeSettings.Text = "Close Settings"
-		closeSettings.Font = Enum.Font.GothamBold
-		closeSettings.TextSize = 18
-		closeSettings.TextColor3 = Color3.new(1,1,1)
-		closeSettings.Parent = p
-		Instance.new("UICorner", closeSettings).CornerRadius = UDim.new(0,14)
+		cleanupFlyObjects()
+		revertBtn.Visible = false
+	else
+		deactivateBtn.Text = "Deactivate"
+		deactivateBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
 
-		closeSettings.MouseButton1Click:Connect(function()
-			playButtonSound()
-			p:Destroy()
-			blur.Size = 0
-		end)
+		if flyEnabled then
+			enableFlyObjects(true)
+			revertBtn.Visible = true
+		end
+	end
+end)
 
-		local unload = Instance.new("TextButton")
-		unload.Size = UDim2.new(1,-30,0,44)
-		unload.Position = UDim2.new(0,15,1,-60)
-		unload.BackgroundColor3 = Color3.fromRGB(200,80,80)
-		unload.Text = "Unload UI"
-		unload.Font = Enum.Font.GothamBold
-		unload.TextSize = 18
-		unload.TextColor3 = Color3.new(1,1,1)
-		unload.Parent = p
-		Instance.new("UICorner", unload).CornerRadius = UDim.new(0,14)
+revertBtn.MouseButton1Click:Connect(function()
+	local default = GAME_DEFAULT_WALKSPEED or 16
+	speedRow.Value = default
+	speedRow.SavedValue = default
+	speedRow.Fill.Size = UDim2.new(default / MAX_VALUE, 0, 1, 0)
+	speedRow.Knob.Position = UDim2.new(default / MAX_VALUE, 0, 0.5, 0)
+	speedRow.ValueBox.Text = tostring(default)
 
-		unload.MouseButton1Click:Connect(function()
-			playButtonSound()
-			closeActivePopup()
+	if not deactivated and not flyEnabled then
+		local char = player.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if hum then hum.WalkSpeed = GAME_DEFAULT_WALKSPEED end
+	end
+end)
 
-			openPopup("Confirm", "Confirm", function(cp)
-				local msg = Instance.new("TextLabel")
-				msg.Size = UDim2.new(1,-30,0,100)
-				msg.Position = UDim2.new(0,15,0,80)
-				msg.BackgroundTransparency = 1
-				msg.TextWrapped = true
-				msg.Text = "Are you sure you want to close the Surface Script UI?"
-				msg.Font = Enum.Font.Gotham
-				msg.TextSize = 18
-				msg.TextColor3 = Color3.new(1,1,1)
-				msg.Parent = cp
+-- Minimize/Maximize Animation
+local minimized = false
+local minimizeTween, maximizeTween
 
-				local confirm = Instance.new("TextButton")
-				confirm.Size = UDim2.new(1,-30,0,44)
-				confirm.Position = UDim2.new(0,15,1,-60)
-				confirm.BackgroundColor3 = Color3.fromRGB(200,80,80)
-				confirm.Text = "Confirm"
-				confirm.Font = Enum.Font.GothamBold
-				confirm.TextSize = 18
-				confirm.TextColor3 = Color3.new(1,1,1)
-				confirm.Parent = cp
-				Instance.new("UICorner", confirm).CornerRadius = UDim.new(0,14)
+minBtn.MouseButton1Click:Connect(function()
+	minimized = not minimized
 
-				local nah = Instance.new("TextButton")
-				nah.Size = UDim2.new(1,-30,0,44)
-				nah.Position = UDim2.new(0,15,1,-110)
-				nah.BackgroundColor3 = Color3.fromRGB(90,90,90)
-				nah.Text = "Fuh Nah 💔🥀"
-				nah.Font = Enum.Font.GothamBold
-				nah.TextSize = 18
-				nah.TextColor3 = Color3.new(1,1,1)
-				nah.Parent = cp
-				Instance.new("UICorner", nah).CornerRadius = UDim.new(0,14)
+	if minimizeTween then minimizeTween:Cancel() end
+	if maximizeTween then maximizeTween:Cancel() end
 
-				nah.MouseButton1Click:Connect(function()
-					playButtonSound()
-					closeActivePopup()
-				end)
+	if minimized then
+		-- Minimize animation
+		minimizeTween = TweenService:Create(
+			mainFrame,
+			TweenInfo.new(ANIMATION_TIME, EASING_STYLE, EASING_DIRECTION),
+			{Size = UDim2.new(0, FRAME_W, 0, 32)}
+		)
+		minimizeTween:Play()
 
-				confirm.MouseButton1Click:Connect(function()
-					playButtonSound()
-					gui:Destroy()
-					blur:Destroy()
-				end)
-			end)
-		end)
+		-- Simply hide the controls frame
+		controlsFrame.Visible = false
+	else
+		-- Maximize animation
+		controlsFrame.Visible = true
+		maximizeTween = TweenService:Create(
+			mainFrame,
+			TweenInfo.new(ANIMATION_TIME, EASING_STYLE, EASING_DIRECTION),
+			{Size = UDim2.new(0, FRAME_W, 0, FRAME_H)}
+		)
+		maximizeTween:Play()
+	end
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+	-- Smooth close animation
+	local closeTween = TweenService:Create(
+		mainFrame,
+		TweenInfo.new(ANIMATION_TIME, EASING_STYLE, EASING_DIRECTION),
+		{BackgroundTransparency = 1, Position = UDim2.new(0.5, -FRAME_W/2, 1, 0)}
+	)
+	closeTween:Play()
+
+	closeTween.Completed:Connect(function()
+		screenGui:Destroy()
 	end)
 end)
 
-------------------------------------------------
--- COMMAND SYSTEM FUNCTIONS
-------------------------------------------------
-local function addCommand(name, func, description, aliasesList)
-	commands[name:lower()] = {
-		func = func,
-		description = description or "No description provided",
-		name = name
+-- Character handling
+local defaultsCaptured = false
+local function onCharacterAdded(char)
+	local hum = char:WaitForChild("Humanoid", 5)
+	if hum then
+		if not defaultsCaptured then
+			GAME_DEFAULT_WALKSPEED = hum.WalkSpeed or GAME_DEFAULT_WALKSPEED
+			defaultsCaptured = true
+			speedRow.Value = GAME_DEFAULT_WALKSPEED
+			speedRow.SavedValue = GAME_DEFAULT_WALKSPEED
+			speedRow.Fill.Size = UDim2.new(speedRow.Value / MAX_VALUE, 0, 1, 0)
+			speedRow.Knob.Position = UDim2.new(speedRow.Value / MAX_VALUE, 0, 0.5, 0)
+			speedRow.ValueBox.Text = tostring(speedRow.Value)
+		end
+	end
+
+	setFly(false)
+	if noclipEnabled and not deactivated then
+		startNoclipLoop()
+	else
+		RestoreCollisions()
+	end
+	cleanupFlyObjects()
+end
+
+if player.Character then
+	onCharacterAdded(player.Character)
+end
+
+player.CharacterAdded:Connect(onCharacterAdded)
+
+-- Flight movement update
+RunService.Heartbeat:Connect(function(dt)
+	if deactivated then
+		if bv then bv.Velocity = Vector3.new(0, 0, 0) end
+		return
+	end
+
+	local char = player.Character
+	if not char then return end
+
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	local cam = workspace.CurrentCamera
+
+	if not hrp or not hum or not cam then return end
+
+	if flyEnabled then
+		if not bv or not bg or not bv.Parent then
+			enableFlyObjects(true)
+		end
+
+		local camC = cam.CFrame
+		local camLook = camC.LookVector
+		local camRight = camC.RightVector
+		local move = hum.MoveDirection or Vector3.new(0, 0, 0)
+
+		local horizForward = Vector3.new(camLook.X, 0, camLook.Z)
+		local horizRight = Vector3.new(camRight.X, 0, camRight.Z)
+
+		if horizForward.Magnitude < 1e-6 then horizForward = Vector3.new(0, 0, 1) end
+		if horizRight.Magnitude < 1e-6 then horizRight = Vector3.new(1, 0, 0) end
+
+		horizForward = horizForward.Unit
+		horizRight = horizRight.Unit
+
+		local forwardInput = Vector3.new(move.X, 0, move.Z):Dot(horizForward)
+		local rightInput = Vector3.new(move.X, 0, move.Z):Dot(horizRight)
+		local dir = (camLook * forwardInput) + (camRight * rightInput)
+
+		if dir.Magnitude < 1e-4 then
+			if bv and bv.Parent then
+				bv.Velocity = bv.Velocity:Lerp(Vector3.new(0, 0, 0), math.clamp(30 * dt, 0, 1))
+			end
+		else
+			local dirUnit = dir.Unit
+			local speed = math.clamp(speedRow.Value or GAME_DEFAULT_WALKSPEED, 0, MAX_VALUE)
+			local targetVel = dirUnit * speed
+
+			if bv and bv.Parent then
+				local current = bv.Velocity
+				local lerpVel = current:Lerp(targetVel, math.clamp(30 * dt, 0, 1))
+				bv.Velocity = lerpVel
+			end
+
+			if bg and bg.Parent then
+				local yawLook = Vector3.new(camLook.X, 0, camLook.Z)
+				if yawLook.Magnitude < 1e-6 then yawLook = Vector3.new(0, 0, 1) end
+				local look = CFrame.new(hrp.Position, hrp.Position + yawLook)
+				bg.CFrame = look
+			end
+		end
+	else
+		if bv or bg then cleanupFlyObjects() end
+		if not deactivated then
+			local val = GAME_DEFAULT_WALKSPEED
+			hum.WalkSpeed = math.clamp(val, 0, MAX_VALUE)
+		end
+	end
+end)
+
+-- Auto-clamp GUI position
+RunService:BindToRenderStep("ClampGUIPosition", Enum.RenderPriority.Camera.Value + 1, function()
+	local pos = mainFrame.AbsolutePosition
+	local nx, ny = clampPositionToScreen(pos.X, pos.Y)
+	if nx ~= pos.X or ny ~= pos.Y then
+		mainFrame.Position = UDim2.new(0, nx, 0, ny)
+	end
+end)
+
+-- Initial Load Animation
+spawn(function()
+	wait() -- Allow frame to render first
+	screenGui.Enabled = true
+
+	-- Main frame animation
+	local mainGoal = {
+		Position = UDim2.new(0.5, -FRAME_W/2, 0.45, -FRAME_H/2),
+		BackgroundTransparency = 0.1
 	}
 
-	if aliasesList then
-		for _, alias in ipairs(aliasesList) do
-			aliases[alias:lower()] = name:lower()
-		end
-	end
-end
+	local mainTween = TweenService:Create(
+		mainFrame,
+		TweenInfo.new(0.5, EASING_STYLE, EASING_DIRECTION),
+		mainGoal
+	)
+	mainTween:Play()
 
-local function getPlayer(name)
-	name = name:lower()
+	-- Title bar animation
+	local titleGoal = {
+		BackgroundTransparency = 0
+	}
 
-	if name == "me" or name == player.Name:lower() then
-		return {player}
-	elseif name == "all" then
-		return Players:GetPlayers()
-	elseif name == "others" then
-		local others = {}
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p ~= player then
-				table.insert(others, p)
-			end
-		end
-		return others
-	elseif name == "random" then
-		local players = Players:GetPlayers()
-		if #players > 0 then
-			return {players[math.random(1, #players)]}
-		end
-		return {}
-	elseif name == "nearest" then
-		local nearestPlayer = nil
-		local nearestDistance = math.huge
-		local localRoot = player.Character and (player.Character:FindFirstChild("HumanoidRootPart") or player.Character:FindFirstChild("Head"))
+	local titleTween = TweenService:Create(
+		titleBar,
+		TweenInfo.new(0.4, EASING_STYLE, EASING_DIRECTION),
+		titleGoal
+	)
+	titleTween:Play()
 
-		if localRoot then
-			for _, p in ipairs(Players:GetPlayers()) do
-				if p ~= player and p.Character then
-					local targetRoot = p.Character:FindFirstChild("HumanoidRootPart") or p.Character:FindFirstChild("Head")
-					if targetRoot then
-						local distance = (localRoot.Position - targetRoot.Position).Magnitude
-						if distance < nearestDistance then
-							nearestDistance = distance
-							nearestPlayer = p
-						end
-					end
-				end
-			end
-		end
-		return nearestPlayer and {nearestPlayer} or {}
-	end
+	-- Controls fade-in
+	local controlsGoal = {
+		BackgroundTransparency = 1
+	}
 
-	local found = {}
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p.Name:lower():find(name) or (p.DisplayName and p.DisplayName:lower():find(name)) then
-			table.insert(found, p)
-		end
-	end
-	return found
-end
-
-local function getRoot(character)
-	return character:FindFirstChild("HumanoidRootPart") or 
-		character:FindFirstChild("UpperTorso") or
-		character:FindFirstChild("Torso") or
-		character:FindFirstChild("Head")
-end
-
-local function loadExternalScript(url)
-	local success, err = pcall(function()
-		local scriptContent = game:HttpGet(url, true)
-		local loadedFunc = loadstring(scriptContent)
-		if loadedFunc then
-			return loadedFunc()
-		end
-		return nil
-	end)
-	return success, err
-end
-
-------------------------------------------------
--- COMMAND DEFINITIONS
-------------------------------------------------
-
--- 1. 🎯 Bang V2 Command
-addCommand("bangv2", function(args)
-	local character = player.Character
-	if not character then showNotification("Error", "No character found!") return end
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then showNotification("Error", "No humanoid found!") return end
-	local url = humanoid.RigType == Enum.HumanoidRigType.R6 and 
-		"https://pastebin.com/raw/aPSHMV6K" or 
-		"https://pastebin.com/raw/1ePMTt9n"
-	local success, result = loadExternalScript(url)
-	if success then showNotification("Success", "✓ 🎯 Bang V2 loaded!") else showNotification("Error", "✗ Failed: "..tostring(result)) end
-end, "Load 🎯 Bang V2 script")
-
--- 2. 🎉 Get Banged Command
-addCommand("getbanged", function(args)
-	local character = player.Character
-	if not character then showNotification("Error", "No character found!") return end
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then showNotification("Error", "No humanoid found!") return end
-	local url = humanoid.RigType == Enum.HumanoidRigType.R6 and 
-		"https://pastebin.com/raw/zHbw7ND1" or 
-		"https://pastebin.com/raw/DyPP2tAF"
-	local success, result = loadExternalScript(url)
-	if success then showNotification("Success", "✓ 🎉 Get Banged loaded!") else showNotification("Error", "✗ Failed: "..tostring(result)) end
-end, "Load 🎉 Get Banged script")
-
--- 3. 💥 Suck Command
-addCommand("suck", function(args)
-	local character = player.Character
-	if not character then showNotification("Error", "No character found!") return end
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then showNotification("Error", "No humanoid found!") return end
-	local url = humanoid.RigType == Enum.HumanoidRigType.R6 and 
-		"https://pastebin.com/raw/SymCfnAW" or 
-		"https://pastebin.com/raw/p8yxRfr4"
-	local success, result = loadExternalScript(url)
-	if success then showNotification("Success", "✓ 💥 Suck loaded!") else showNotification("Error", "✗ Failed: "..tostring(result)) end
-end, "Load 💥 Suck script")
-
--- 4. 🔥 Get Suc Command
-addCommand("getsuc", function(args)
-	local character = player.Character
-	if not character then showNotification("Error", "No character found!") return end
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then showNotification("Error", "No humanoid found!") return end
-	local url = humanoid.RigType == Enum.HumanoidRigType.R6 and 
-		"https://pastebin.com/raw/FPu4e2Qh" or 
-		"https://pastebin.com/raw/7hvcjDnW"
-	local success, result = loadExternalScript(url)
-	if success then showNotification("Success", "✓ 🔥 Get Suc loaded!") else showNotification("Error", "✗ Failed: "..tostring(result)) end
-end, "Load 🔥 Get Suc script")
-
--- 5. ⚡ Jerk Command
-addCommand("jerk", function(args)
-	local character = player.Character
-	if not character then showNotification("Error", "No character found!") return end
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then showNotification("Error", "No humanoid found!") return end
-	local url = humanoid.RigType == Enum.HumanoidRigType.R6 and 
-		"https://pastefy.app/wa3v2Vgm/raw" or 
-		"https://pastefy.app/YZoglOyJ/raw"
-	local success, result = loadExternalScript(url)
-	if success then showNotification("Success", "✓ ⚡ Jerk loaded!") else showNotification("Error", "✗ Failed: "..tostring(result)) end
-end, "Load ⚡ Jerk script")
-
--- Goto Command
-addCommand("goto", function(args)
-	if not args[1] then showNotification("Usage", "goto [player]") return end
-	local players = getPlayer(args[1])
-	if #players == 0 then showNotification("Error", "Player not found: " .. args[1]) return end
-	local target = players[1]
-	local character = player.Character
-	if not character then showNotification("Error", "Your character doesn't exist!") return end
-	local rootPart = getRoot(character)
-	if not rootPart then showNotification("Error", "No root part found on your character!") return end
-	if not target.Character then showNotification("Error", target.Name .. " has no character!") return end
-	local targetRoot = getRoot(target.Character)
-	if not targetRoot then showNotification("Error", "No root part found on " .. target.Name .. "!") return end
-	rootPart.CFrame = targetRoot.CFrame
-	showNotification("Teleported", "Teleported to " .. target.Name)
-end, "Teleport to a player", {"tp", "teleport"})
-
--- Speed Command
-addCommand("speed", function(args)
-	if not args[1] then showNotification("Usage", "speed [number]") return end
-	local speed = tonumber(args[1])
-	if not speed then showNotification("Error", "Invalid speed value!") return end
-	local character = player.Character
-	if not character then showNotification("Error", "No character found!") return end
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then showNotification("Error", "No humanoid found!") return end
-	humanoid.WalkSpeed = speed
-	showNotification("Speed Set", "Walk speed set to " .. speed)
-end, "Set walk speed", {"ws"})
-
--- Jump Command
-addCommand("jump", function(args)
-	if not args[1] then showNotification("Usage", "jump [number]") return end
-	local jump = tonumber(args[1])
-	if not jump then showNotification("Error", "Invalid jump value!") return end
-	local character = player.Character
-	if not character then showNotification("Error", "No character found!") return end
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then showNotification("Error", "No humanoid found!") return end
-	humanoid.JumpPower = jump
-	showNotification("Jump Set", "Jump power set to " .. jump)
-end, "Set jump power", {"jp"})
-
--- Gravity Command
-addCommand("gravity", function(args)
-	if not args[1] then showNotification("Gravity", "Current gravity: " .. Workspace.Gravity) return end
-	local gravity = tonumber(args[1])
-	if not gravity then showNotification("Error", "Invalid gravity value!") return end
-	Workspace.Gravity = gravity
-	showNotification("Gravity Set", "Gravity set to " .. gravity)
-end, "Set workspace gravity", {"grav"})
-
--- ESP Command
-addCommand("esp", function(args)
-	local target = args[1] or "all"
-	local players = getPlayer(target)
-
-	if #players == 0 then
-		showNotification("Error", "No players found: " .. target)
-		return
-	end
-
-	local added = 0
-	local removed = 0
-
-	for _, p in ipairs(players) do
-		if p ~= player and p.Character then
-			local highlight = p.Character:FindFirstChildOfClass("Highlight")
-
-			if highlight then
-				highlight:Destroy()
-				removed = removed + 1
-			else
-				highlight = Instance.new("Highlight")
-				highlight.Name = "ESP"
-				highlight.FillColor = Color3.fromRGB(255, 50, 50)
-				highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-				highlight.FillTransparency = 0.5
-				highlight.Parent = p.Character
-				added = added + 1
-			end
-		end
-	end
-
-	if added > 0 or removed > 0 then
-		showNotification("ESP", added .. " added, " .. removed .. " removed")
-	end
-end, "Toggle ESP on players", {"highlight"})
-
--- Time Command
-addCommand("time", function(args)
-	if not args[1] then
-		showNotification("Time", "Current time: " .. string.format("%.1f", Lighting.ClockTime))
-		return
-	end
-
-	local time = tonumber(args[1])
-	if not time then
-		showNotification("Error", "Invalid time value!")
-		return
-	end
-
-	Lighting.ClockTime = time
-	showNotification("Time Set", "Time set to " .. time)
-end, "Set or check time of day")
-
--- Sit Command
-addCommand("sit", function(args)
-	local players = getPlayer(args[1] or "me")
-
-	for _, p in ipairs(players) do
-		if p.Character then
-			local humanoid = p.Character:FindFirstChildOfClass("Humanoid")
-			if humanoid then
-				humanoid.Sit = true
-			end
-		end
-	end
-	showNotification("Sit", "Made " .. #players .. " player(s) sit")
-end, "Make player(s) sit")
-
--- Unsit Command
-addCommand("unsit", function(args)
-	local players = getPlayer(args[1] or "me")
-
-	for _, p in ipairs(players) do
-		if p.Character then
-			local humanoid = p.Character:FindFirstChildOfClass("Humanoid")
-			if humanoid then
-				humanoid.Sit = false
-			end
-		end
-	end
-	showNotification("Unsit", "Made " .. #players .. " player(s) stand")
-end, "Make player(s) stand", {"stand"})
-
--- Spin Command
-addCommand("spin", function(args)
-	local players = getPlayer(args[1] or "me")
-
-	for _, p in ipairs(players) do
-		if p.Character then
-			local root = getRoot(p.Character)
-			if root then
-				local spinning = root:FindFirstChild("SpinVelocity")
-				if spinning then
-					spinning:Destroy()
-				else
-					local spin = Instance.new("BodyAngularVelocity")
-					spin.Name = "SpinVelocity"
-					spin.MaxTorque = Vector3.new(0, math.huge, 0)
-					spin.AngularVelocity = Vector3.new(0, 20, 0)
-					spin.Parent = root
-				end
-			end
-		end
-	end
-	showNotification("Spin", "Toggled spin for " .. #players .. " player(s)")
-end, "Make player(s) spin")
-
--- Fly Command
-addCommand("fly", function()
-	-- Execute the flight script
-	local success, error = pcall(function()
-		loadstring(game:HttpGet("https://pastefy.app/ear6SIcl/raw"))()
-	end)
-
-	if success then
-		showNotification("Success", "You will see a window, it includes fly and noclip.")
-	else
-		showNotification("Error", "✗ Failed to load flight script: " .. tostring(error))
-	end
-end, "Load flight/noclip script")
-
-addCommand("noclip", function(args)
-	showNotification("Use different command", "Please use the ;fly command, it includes noclip!")
+	local controlsTween = TweenService:Create(
+		controlsFrame,
+		TweenInfo.new(0.6, EASING_STYLE, EASING_DIRECTION),
+		controlsGoal
+	)
+	controlsTween:Play()
 end)
-
--- Commands List Command (Opens popup)
-addCommand("commands", function()
-	playButtonSound()
-	closeActivePopup()
-
-	openPopup("CommandsList", "Available Commands", function(p)
-		-- Create scrolling frame for commands
-		local scrollFrame = Instance.new("ScrollingFrame")
-		scrollFrame.Size = UDim2.new(1, -30, 1, -120)
-		scrollFrame.Position = UDim2.new(0, 15, 0, 70)
-		scrollFrame.BackgroundTransparency = 1
-		scrollFrame.BorderSizePixel = 0
-		scrollFrame.ScrollBarThickness = 8
-		scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 120)
-		scrollFrame.Parent = p
-
-		local commandsList = Instance.new("UIListLayout")
-		commandsList.Parent = scrollFrame
-		commandsList.SortOrder = Enum.SortOrder.LayoutOrder
-		commandsList.Padding = UDim.new(0, 10)
-
-		-- Build commands display
-		local totalHeight = 0
-
-		for _, category in ipairs(commandCategories) do
-			-- Category header
-			local categoryHeader = Instance.new("TextLabel")
-			categoryHeader.Size = UDim2.new(1, 0, 0, 30)
-			categoryHeader.BackgroundTransparency = 1
-			categoryHeader.Text = category.name
-			categoryHeader.Font = Enum.Font.GothamBold
-			categoryHeader.TextSize = 18
-			categoryHeader.TextColor3 = Color3.fromRGB(255, 255, 255)
-			categoryHeader.TextXAlignment = Enum.TextXAlignment.Left
-			categoryHeader.LayoutOrder = totalHeight
-			categoryHeader.Parent = scrollFrame
-			totalHeight += 30
-
-			-- Commands in category
-			for _, cmd in ipairs(category.commands) do
-				local commandFrame = Instance.new("Frame")
-				commandFrame.Size = UDim2.new(1, 0, 0, 40)
-				commandFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-				commandFrame.BackgroundTransparency = 0.2
-				commandFrame.LayoutOrder = totalHeight
-				commandFrame.Parent = scrollFrame
-
-				Instance.new("UICorner", commandFrame).CornerRadius = UDim.new(0, 8)
-
-				local commandName = Instance.new("TextLabel")
-				commandName.Size = UDim2.new(0.4, -10, 1, -10)
-				commandName.Position = UDim2.new(0, 10, 0, 5)
-				commandName.BackgroundTransparency = 1
-				commandName.Text = commandPrefix .. cmd.name
-				commandName.Font = Enum.Font.GothamBold
-				commandName.TextSize = 16
-				commandName.TextColor3 = Color3.fromRGB(150, 180, 255)
-				commandName.TextXAlignment = Enum.TextXAlignment.Left
-				commandName.TextYAlignment = Enum.TextYAlignment.Center
-				commandName.Parent = commandFrame
-
-				local commandDesc = Instance.new("TextLabel")
-				commandDesc.Size = UDim2.new(0.6, -10, 1, -10)
-				commandDesc.Position = UDim2.new(0.4, 10, 0, 5)
-				commandDesc.BackgroundTransparency = 1
-				commandDesc.Text = cmd.desc
-				commandDesc.Font = Enum.Font.Gotham
-				commandDesc.TextSize = 14
-				commandDesc.TextColor3 = Color3.fromRGB(220, 220, 220)
-				commandDesc.TextXAlignment = Enum.TextXAlignment.Left
-				commandDesc.TextYAlignment = Enum.TextYAlignment.Center
-				commandDesc.Parent = commandFrame
-
-				totalHeight += 45
-			end
-
-			-- Add spacing after category
-			totalHeight += 15
-		end
-
-		-- Player selectors section
-		local selectorHeader = Instance.new("TextLabel")
-		selectorHeader.Size = UDim2.new(1, 0, 0, 30)
-		selectorHeader.BackgroundTransparency = 1
-		selectorHeader.Text = "🎮 PLAYER SELECTORS"
-		selectorHeader.Font = Enum.Font.GothamBold
-		selectorHeader.TextSize = 18
-		selectorHeader.TextColor3 = Color3.fromRGB(255, 255, 255)
-		selectorHeader.TextXAlignment = Enum.TextXAlignment.Left
-		selectorHeader.LayoutOrder = totalHeight
-		selectorHeader.Parent = scrollFrame
-		totalHeight += 30
-
-		local selectors = {"me", "all", "others", "random", "nearest"}
-		for _, selector in ipairs(selectors) do
-			local selectorFrame = Instance.new("Frame")
-			selectorFrame.Size = UDim2.new(1, 0, 0, 30)
-			selectorFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-			selectorFrame.BackgroundTransparency = 0.3
-			selectorFrame.LayoutOrder = totalHeight
-			selectorFrame.Parent = scrollFrame
-
-			Instance.new("UICorner", selectorFrame).CornerRadius = UDim.new(0, 6)
-
-			local selectorLabel = Instance.new("TextLabel")
-			selectorLabel.Size = UDim2.new(1, -20, 1, -10)
-			selectorLabel.Position = UDim2.new(0, 10, 0, 5)
-			selectorLabel.BackgroundTransparency = 1
-			selectorLabel.Text = "  " .. selector
-			selectorLabel.Font = Enum.Font.Gotham
-			selectorLabel.TextSize = 14
-			selectorLabel.TextColor3 = Color3.fromRGB(200, 200, 220)
-			selectorLabel.TextXAlignment = Enum.TextXAlignment.Left
-			selectorLabel.TextYAlignment = Enum.TextYAlignment.Center
-			selectorLabel.Parent = selectorFrame
-
-			totalHeight += 35
-		end
-
-		-- Tip at bottom
-		totalHeight += 10
-		local tipLabel = Instance.new("TextLabel")
-		tipLabel.Size = UDim2.new(1, 0, 0, 40)
-		tipLabel.BackgroundTransparency = 1
-		tipLabel.Text = "💡 TIP: Commands work with or without " .. commandPrefix
-		tipLabel.Font = Enum.Font.Gotham
-		tipLabel.TextSize = 14
-		tipLabel.TextColor3 = Color3.fromRGB(180, 200, 255)
-		tipLabel.TextXAlignment = Enum.TextXAlignment.Center
-		tipLabel.TextYAlignment = Enum.TextYAlignment.Center
-		tipLabel.LayoutOrder = totalHeight
-		tipLabel.Parent = scrollFrame
-
-		-- Update scroll frame canvas size
-		scrollFrame.CanvasSize = UDim2.new(0, 0, 0, totalHeight + 50)
-
-		-- Close button
-		local closeBtn = Instance.new("TextButton")
-		closeBtn.Size = UDim2.new(1, -30, 0, 44)
-		closeBtn.Position = UDim2.new(0, 15, 1, -60)
-		closeBtn.BackgroundColor3 = Color3.fromRGB(90, 90, 90)
-		closeBtn.Text = "Close"
-		closeBtn.Font = Enum.Font.GothamBold
-		closeBtn.TextSize = 18
-		closeBtn.TextColor3 = Color3.new(1, 1, 1)
-		closeBtn.Parent = p
-		Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 14)
-
-		closeBtn.MouseButton1Click:Connect(function()
-			playButtonSound()
-			closeActivePopup()
-		end)
-	end)
-end, "Show all available commands", {"cmds", "help"})
-
--- Scripts command (Opens popup)
-addCommand("scripts", function()
-	playButtonSound()
-	closeActivePopup()
-
-	openPopup("ScriptCommands", "Script Commands", function(p)
-		-- Create scrolling frame for script commands
-		local scrollFrame = Instance.new("ScrollingFrame")
-		scrollFrame.Size = UDim2.new(1, -30, 1, -120)
-		scrollFrame.Position = UDim2.new(0, 15, 0, 70)
-		scrollFrame.BackgroundTransparency = 1
-		scrollFrame.BorderSizePixel = 0
-		scrollFrame.ScrollBarThickness = 8
-		scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 120)
-		scrollFrame.Parent = p
-
-		local commandsList = Instance.new("UIListLayout")
-		commandsList.Parent = scrollFrame
-		commandsList.SortOrder = Enum.SortOrder.LayoutOrder
-		commandsList.Padding = UDim.new(0, 10)
-
-		local totalHeight = 0
-
-		-- Header
-		local header = Instance.new("TextLabel")
-		header.Size = UDim2.new(1, 0, 0, 40)
-		header.BackgroundTransparency = 1
-		header.Text = "📜 SCRIPT COMMANDS"
-		header.Font = Enum.Font.GothamBold
-		header.TextSize = 22
-		header.TextColor3 = Color3.fromRGB(255, 255, 255)
-		header.TextXAlignment = Enum.TextXAlignment.Center
-		header.LayoutOrder = totalHeight
-		header.Parent = scrollFrame
-		totalHeight += 40
-
-		-- Script commands
-		for _, cmd in ipairs(commandCategories[1].commands) do
-			local commandFrame = Instance.new("Frame")
-			commandFrame.Size = UDim2.new(1, 0, 0, 50)
-			commandFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-			commandFrame.BackgroundTransparency = 0.2
-			commandFrame.LayoutOrder = totalHeight
-			commandFrame.Parent = scrollFrame
-
-			Instance.new("UICorner", commandFrame).CornerRadius = UDim.new(0, 8)
-
-			local commandIcon = Instance.new("TextLabel")
-			commandIcon.Size = UDim2.new(0, 40, 1, -10)
-			commandIcon.Position = UDim2.new(0, 10, 0, 5)
-			commandIcon.BackgroundTransparency = 1
-			commandIcon.Text = "▶️"
-			commandIcon.Font = Enum.Font.GothamBold
-			commandIcon.TextSize = 18
-			commandIcon.TextColor3 = Color3.fromRGB(180, 220, 255)
-			commandIcon.TextXAlignment = Enum.TextXAlignment.Center
-			commandIcon.TextYAlignment = Enum.TextYAlignment.Center
-			commandIcon.Parent = commandFrame
-
-			local commandName = Instance.new("TextLabel")
-			commandName.Size = UDim2.new(0.4, -60, 1, -10)
-			commandName.Position = UDim2.new(0, 60, 0, 5)
-			commandName.BackgroundTransparency = 1
-			commandName.Text = commandPrefix .. cmd.name
-			commandName.Font = Enum.Font.GothamBold
-			commandName.TextSize = 16
-			commandName.TextColor3 = Color3.fromRGB(180, 200, 255)
-			commandName.TextXAlignment = Enum.TextXAlignment.Left
-			commandName.TextYAlignment = Enum.TextYAlignment.Center
-			commandName.Parent = commandFrame
-
-			local commandDesc = Instance.new("TextLabel")
-			commandDesc.Size = UDim2.new(0.6, -20, 1, -10)
-			commandDesc.Position = UDim2.new(0.4, 40, 0, 5)
-			commandDesc.BackgroundTransparency = 1
-			commandDesc.Text = cmd.desc
-			commandDesc.Font = Enum.Font.Gotham
-			commandDesc.TextSize = 14
-			commandDesc.TextColor3 = Color3.fromRGB(220, 220, 220)
-			commandDesc.TextXAlignment = Enum.TextXAlignment.Left
-			commandDesc.TextYAlignment = Enum.TextYAlignment.Center
-			commandDesc.Parent = commandFrame
-
-			totalHeight += 55
-		end
-
-		-- Tip at bottom
-		totalHeight += 20
-		local tipLabel = Instance.new("TextLabel")
-		tipLabel.Size = UDim2.new(1, 0, 0, 60)
-		tipLabel.BackgroundTransparency = 1
-		tipLabel.Text = "💡 Use " .. commandPrefix .. "commands for ALL commands\n\nThese commands load external scripts from the internet."
-		tipLabel.Font = Enum.Font.Gotham
-		tipLabel.TextSize = 14
-		tipLabel.TextColor3 = Color3.fromRGB(200, 200, 220)
-		tipLabel.TextXAlignment = Enum.TextXAlignment.Center
-		tipLabel.TextYAlignment = Enum.TextYAlignment.Center
-		tipLabel.TextWrapped = true
-		tipLabel.LayoutOrder = totalHeight
-		tipLabel.Parent = scrollFrame
-
-		-- Update scroll frame canvas size
-		scrollFrame.CanvasSize = UDim2.new(0, 0, 0, totalHeight + 80)
-
-		-- Close button
-		local closeBtn = Instance.new("TextButton")
-		closeBtn.Size = UDim2.new(1, -30, 0, 44)
-		closeBtn.Position = UDim2.new(0, 15, 1, -60)
-		closeBtn.BackgroundColor3 = Color3.fromRGB(90, 90, 90)
-		closeBtn.Text = "Close"
-		closeBtn.Font = Enum.Font.GothamBold
-		closeBtn.TextSize = 18
-		closeBtn.TextColor3 = Color3.new(1, 1, 1)
-		closeBtn.Parent = p
-		Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 14)
-
-		closeBtn.MouseButton1Click:Connect(function()
-			playButtonSound()
-			closeActivePopup()
-		end)
-	end)
-end, "Show only script commands")
-
--- Hide GUI Command
-addCommand("hidegui", function()
-	gui.Enabled = not gui.Enabled
-	showNotification("GUI", "GUI " .. (gui.Enabled and "shown" or "hidden"))
-end, "Toggle GUI visibility", {"gui"})
-
--- Clear Command
-addCommand("clear", function()
-	for _, notif in ipairs(activeNotifications) do
-		if notif and notif.Parent then
-			notif:Destroy()
-		end
-	end
-	activeNotifications = {}
-	showNotification("Cleared", "All notifications cleared")
-end, "Clear notifications")
-
--- Reset Command
-addCommand("reset", function()
-	local character = player.Character
-	if character then
-		character:BreakJoints()
-		showNotification("Reset", "Character reset")
-	end
-end, "Reset your character", {"respawn"})
-
--- Prefix Command
-addCommand("prefix", function(args)
-	if not args[1] then
-		showNotification("Prefix", "Current prefix: " .. commandPrefix)
-		return
-	end
-
-	local newPrefix = tostring(args[1]):sub(1, 1)
-	if newPrefix and newPrefix ~= "" then
-		commandPrefix = newPrefix
-		commandBar.PlaceholderText = "Type command (" .. commandPrefix .. ")..."
-		showNotification("Prefix Changed", "Prefix changed to: " .. commandPrefix)
-	else
-		showNotification("Error", "Invalid prefix!")
-	end
-end, "Change command prefix")
-
--- Server Hop Command
-addCommand("serverhop", function()
-	showNotification("Server Hop", "Searching for servers...")
-
-	local success, response = pcall(function()
-		local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Desc&limit=100"
-		return HttpService:JSONDecode(game:HttpGet(url))
-	end)
-
-	if success and response and response.data then
-		local servers = {}
-		for _, server in ipairs(response.data) do
-			if server.playing < server.maxPlayers and server.id ~= game.JobId then
-				table.insert(servers, server.id)
-			end
-		end
-
-		if #servers > 0 then
-			local randomServer = servers[math.random(1, #servers)]
-			showNotification("Server Hop", "Joining new server...")
-			game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, randomServer)
-		else
-			showNotification("Server Hop", "No available servers found")
-		end
-	else
-		showNotification("Server Hop", "Failed to get server list")
-	end
-end, "Hop to a different server", {"hop", "rejoin"})
-
-------------------------------------------------
--- COMMAND BAR INPUT HANDLING
-------------------------------------------------
-commandBar.FocusLost:Connect(function(enterPressed)
-	if enterPressed and commandBar.Text ~= "" then
-		playButtonSound()
-		local input = commandBar.Text
-
-		-- Remove prefix if present
-		if input:sub(1, 1) == commandPrefix then
-			input = input:sub(2)
-		end
-
-		local split = {}
-		for word in input:gmatch("%S+") do
-			table.insert(split, word)
-		end
-
-		if #split > 0 then
-			table.insert(commandHistory, input)
-			commandIndex = #commandHistory + 1
-
-			local cmd = table.remove(split, 1)
-			local commandName = cmd:lower()
-			local command = commands[commandName] or commands[aliases[commandName]]
-
-			if command then
-				local success, err = pcall(function()
-					command.func(split)
-				end)
-				if not success then
-					showNotification("Error", "Command error: " .. tostring(err))
-				end
-			else
-				showNotification("Error", "Unknown command: " .. cmd)
-			end
-		end
-		commandBar.Text = ""
-	end
-end)
-
--- Keyboard shortcuts for command bar
-if not IS_MOBILE then
-	UserInputService.InputBegan:Connect(function(input)
-		if input.KeyCode == Enum.KeyCode.Semicolon then
-			commandBar:CaptureFocus()
-		elseif input.KeyCode == Enum.KeyCode.Up then
-			if commandIndex > 1 then
-				commandIndex = commandIndex - 1
-				commandBar.Text = commandHistory[commandIndex]
-			end
-		elseif input.KeyCode == Enum.KeyCode.Down then
-			if commandIndex < #commandHistory then
-				commandIndex = commandIndex + 1
-				commandBar.Text = commandHistory[commandIndex]
-			elseif commandIndex == #commandHistory then
-				commandIndex = #commandHistory + 1
-				commandBar.Text = ""
-			end
-		end
-	end)
-end
-
-------------------------------------------------
--- SHOW WELCOME NOTIFICATION
-------------------------------------------------
-task.spawn(function()
-	task.wait(1)
-	showNotification("Welcome to Surface Script UI!", "Explore the new bar at the bottom, with an integrated command line for Admin shit. Don't like it? Go to settings and click UNLOAD UI or use command ;hidegui")
-end)
-
-------------------------------------------------
--- BAR + ARROW TOGGLE CONSTANTS
-------------------------------------------------
-local BAR_VISIBLE = UDim2.new(0.5,0,1,-20)
-local BAR_HIDDEN  = UDim2.new(0.5,0,1,90)
-local ARROW_VISIBLE = UDim2.new(0.5,0,1,-104)
-local ARROW_EDGE    = UDim2.new(0.5,0,1,-28)
-
-------------------------------------------------
--- FLUID LOADING ANIMATION
-------------------------------------------------
-task.spawn(function()
-	task.wait(0.1)
-
-	TweenService:Create(bar, TweenInfo.new(0.65, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-		Position = BAR_VISIBLE
-	}):Play()
-
-	TweenService:Create(arrow, TweenInfo.new(0.65, Enum.EasingStyle.Quint, Enum.EasingDirection.Out, 0, false, 0.1), {
-		Position = ARROW_VISIBLE,
-		Rotation = 0
-	}):Play()
-end)
-
-------------------------------------------------
--- BAR + ARROW TOGGLE FUNCTIONALITY
-------------------------------------------------
-arrow.MouseButton1Click:Connect(function()
-	if animating then return end
-	animating = true
-	menuOpen = not menuOpen
-	playButtonSound()
-
-	TweenService:Create(bar, TweenInfo.new(0.45, Enum.EasingStyle.Quint), {
-		Position = menuOpen and BAR_VISIBLE or BAR_HIDDEN
-	}):Play()
-
-	TweenService:Create(arrow, TweenInfo.new(0.45, Enum.EasingStyle.Quint), {
-		Position = menuOpen and ARROW_VISIBLE or ARROW_EDGE,
-		Rotation = menuOpen and 0 or 180
-	}):Play()
-
-	task.delay(0.45, function()
-		animating = false
-	end)
-end)
-
-------------------------------------------------
--- CLEANUP ON CHARACTER REMOVAL
-------------------------------------------------
-player.CharacterRemoving:Connect(function()
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p.Character then
-			local esp = p.Character:FindFirstChild("ESP")
-			if esp then esp:Destroy() end
-		end
-	end
-end)
-
--- Auto-clean ESP on player leave
-Players.PlayerRemoving:Connect(function(p)
-	if p.Character then
-		local esp = p.Character:FindFirstChild("ESP")
-		if esp then esp:Destroy() end
-	end
-end)
-
