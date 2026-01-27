@@ -982,7 +982,7 @@ end, "Make player(s) spin")
 addCommand("fly", function()
 	-- Execute the flight script
 	local success, error = pcall(function()
-		loadstring(game:HttpGet("https://pastefy.app/ear6SIcl/raw"))()
+		loadstring(game:HttpGet("https://raw.githubusercontent.com/enwar-d/surface-script/refs/heads/main/ssflynoclip"))()
 	end)
 
 	if success then
@@ -1429,7 +1429,7 @@ local ARROW_EDGE    = UDim2.new(0.5,0,1,-28)
 -- FLUID LOADING ANIMATION
 ------------------------------------------------
 task.spawn(function()
-	task.wait(0.1)
+	task.wait(0.9)
 
 	TweenService:Create(bar, TweenInfo.new(0.65, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 		Position = BAR_VISIBLE
@@ -1483,4 +1483,3 @@ Players.PlayerRemoving:Connect(function(p)
 		if esp then esp:Destroy() end
 	end
 end)
-
