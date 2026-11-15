@@ -1,0 +1,1854 @@
+--[[
+	SURFACE SCRIPT - iOS Notification & Executor UI Shell
+	Compatible with Roblox Studio & Script Executors (gethui / CoreGui / PlayerGui)
+]]
+
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local AssetService = game:GetService("AssetService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- Resolve safe UI parent for both Executors and Studio
+local function getGuiParent()
+	local ok, hui = pcall(function()
+		if type(gethui) == "function" then
+			return gethui()
+		end
+		return nil
+	end)
+	if ok and hui then
+		return hui
+	end
+	local okCore, coreGui = pcall(function()
+		return game:GetService("CoreGui")
+	end)
+	if okCore and coreGui then
+		local testOk = pcall(function()
+			local f = Instance.new("Folder")
+			f.Parent = coreGui
+			f:Destroy()
+		end)
+		if testOk then
+			return coreGui
+		end
+	end
+	return LocalPlayer:WaitForChild("PlayerGui")
+end
+
+-- User-provided SVG_CIRCLES Logo Data
+local SVG_CIRCLES = {
+	-- Row 1 (cy = 4)
+	{ cx = 20, cy = 4,  r = 2.2, opacity = 0.50 },
+	{ cx = 13, cy = 4,  r = 1.4, opacity = 0.32 },
+	{ cx = 27, cy = 4,  r = 1.4, opacity = 0.32 },
+	-- Row 2 (cy = 11)
+	{ cx = 7,  cy = 11, r = 1.7, opacity = 0.38 },
+	{ cx = 13, cy = 11, r = 3.0, opacity = 0.70 },
+	{ cx = 20, cy = 11, r = 3.8, opacity = 0.86 },
+	{ cx = 27, cy = 11, r = 3.0, opacity = 0.70 },
+	{ cx = 33, cy = 11, r = 1.7, opacity = 0.38 },
+	-- Row 3 (cy = 18 - center row)
+	{ cx = 7,  cy = 18, r = 2.7, opacity = 0.56 },
+	{ cx = 13, cy = 18, r = 4.2, opacity = 1.00 },
+	{ cx = 20, cy = 18, r = 5.0, opacity = 1.00 },
+	{ cx = 27, cy = 18, r = 4.2, opacity = 1.00 },
+	{ cx = 33, cy = 18, r = 2.7, opacity = 0.56 },
+	-- Row 4 (cy = 25)
+	{ cx = 7,  cy = 25, r = 2.1, opacity = 0.44 },
+	{ cx = 13, cy = 25, r = 3.5, opacity = 0.80 },
+	{ cx = 20, cy = 25, r = 4.2, opacity = 0.90 },
+	{ cx = 27, cy = 25, r = 3.5, opacity = 0.80 },
+	{ cx = 33, cy = 25, r = 2.1, opacity = 0.44 },
+	-- Row 5 (cy = 32)
+	{ cx = 13, cy = 32, r = 2.7, opacity = 0.56 },
+	{ cx = 20, cy = 32, r = 3.2, opacity = 0.70 },
+	{ cx = 27, cy = 32, r = 2.7, opacity = 0.56 },
+}
+
+-- UI Script Settings State (controlled live via the Settings tab)
+local UISettings = {
+	GlassUI = true,
+	BackgroundBlur = true,
+	SwipeToDismiss = true,
+	CompactNotifications = false,
+}
+
+-- iOS Timing Curves
+local IOS_TIMING = {
+	Present = TweenInfo.new(0.46, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+	Dismiss = TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut),
+	SwipeDismiss = TweenInfo.new(0.26, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+	SnapBack = TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+	ColorFill = TweenInfo.new(0.34, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+	ContentFade = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+	PanelOpen = TweenInfo.new(0.46, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+	PanelClose = TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut),
+	TabSlide = TweenInfo.new(0.36, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+	PageTransition = TweenInfo.new(0.32, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+	PressDown = TweenInfo.new(0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+	SpringRelease = TweenInfo.new(0.34, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+	SwitchToggle = TweenInfo.new(0.26, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+}
+
+local COLORS = {
+	-- Notification colors (no outline!)
+	NotifTop = Color3.fromRGB(48, 48, 52),
+	NotifBottom = Color3.fromRGB(12, 12, 14),
+	CheckGray = Color3.fromRGB(88, 88, 92),
+	CheckGrayHover = Color3.fromRGB(104, 104, 110),
+	CancelRed = Color3.fromRGB(224, 98, 94),
+	CancelRedHover = Color3.fromRGB(236, 112, 108),
+	White = Color3.fromRGB(255, 255, 255),
+	SubText = Color3.fromRGB(225, 228, 235),
+
+	-- Normal UI vs Glass UI Colors
+	NormalWindowBg = Color3.fromRGB(15, 18, 26),
+	NormalCardBg = Color3.fromRGB(25, 29, 40),
+	GlassWindowBg = Color3.fromRGB(22, 27, 40),
+	GlassCardBg = Color3.fromRGB(36, 42, 58),
+	StrokeColor = Color3.fromRGB(75, 84, 106),
+	GlassStrokeColor = Color3.fromRGB(145, 160, 190),
+
+	SwitchOff = Color3.fromRGB(58, 62, 74),
+	SwitchOn = Color3.fromRGB(52, 199, 89),
+	IconLight = Color3.fromRGB(240, 244, 250),
+	TextMuted = Color3.fromRGB(150, 158, 175),
+}
+
+local REGULAR_WINDOW_POS = UDim2.new(1, -84, 0.5, 0)
+
+local guiParent = getGuiParent()
+local existingGui = guiParent:FindFirstChild("SurfaceScriptUI")
+if existingGui then
+	existingGui:Destroy()
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SurfaceScriptUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.DisplayOrder = 999
+ScreenGui.Parent = guiParent
+
+--------------------------------------------------------------------------------
+-- THEME REGISTRY (Switches seamlessly between Glass UI and Normal UI, with
+-- uniform non-cutout outlines!)
+--------------------------------------------------------------------------------
+local ThemedSurfaces = {} -- { { Frame, Stroke, Kind = "Window" | "Card" } }
+
+local function registerThemedSurface(frame, cornerRadius, kind)
+	frame.BorderSizePixel = 0
+	if cornerRadius then
+		local corner = frame:FindFirstChildOfClass("UICorner") or Instance.new("UICorner", frame)
+		corner.CornerRadius = cornerRadius
+	end
+
+	-- Uniform continuous UIStroke (no UIGradient transparency cutout!)
+	local stroke = frame:FindFirstChildOfClass("UIStroke") or Instance.new("UIStroke", frame)
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	stroke.LineJoinMode = Enum.LineJoinMode.Round
+	stroke.Thickness = 1.2
+
+	local entry = { Frame = frame, Stroke = stroke, Kind = kind or "Window" }
+	table.insert(ThemedSurfaces, entry)
+
+	local isGlass = UISettings.GlassUI
+	if entry.Kind == "Window" then
+		frame.BackgroundColor3 = isGlass and COLORS.GlassWindowBg or COLORS.NormalWindowBg
+		frame.BackgroundTransparency = isGlass and 0.22 or 0
+		stroke.Color = isGlass and COLORS.GlassStrokeColor or COLORS.StrokeColor
+		stroke.Transparency = isGlass and 0.45 or 0.35
+	else
+		frame.BackgroundColor3 = isGlass and COLORS.GlassCardBg or COLORS.NormalCardBg
+		frame.BackgroundTransparency = isGlass and 0.32 or 0
+		stroke.Color = isGlass and COLORS.GlassStrokeColor or COLORS.StrokeColor
+		stroke.Transparency = isGlass and 0.55 or 0.45
+	end
+
+	return stroke
+end
+
+local function refreshTheme()
+	local isGlass = UISettings.GlassUI
+	for _, entry in ipairs(ThemedSurfaces) do
+		if entry.Frame and entry.Frame.Parent then
+			if entry.Kind == "Window" then
+				TweenService:Create(entry.Frame, IOS_TIMING.SwitchToggle, {
+					BackgroundColor3 = isGlass and COLORS.GlassWindowBg or COLORS.NormalWindowBg,
+					BackgroundTransparency = isGlass and 0.22 or 0,
+				}):Play()
+				TweenService:Create(entry.Stroke, IOS_TIMING.SwitchToggle, {
+					Color = isGlass and COLORS.GlassStrokeColor or COLORS.StrokeColor,
+					Transparency = isGlass and 0.45 or 0.35,
+				}):Play()
+			else
+				TweenService:Create(entry.Frame, IOS_TIMING.SwitchToggle, {
+					BackgroundColor3 = isGlass and COLORS.GlassCardBg or COLORS.NormalCardBg,
+					BackgroundTransparency = isGlass and 0.32 or 0,
+				}):Play()
+				TweenService:Create(entry.Stroke, IOS_TIMING.SwitchToggle, {
+					Color = isGlass and COLORS.GlassStrokeColor or COLORS.StrokeColor,
+					Transparency = isGlass and 0.55 or 0.45,
+				}):Play()
+			end
+		end
+	end
+end
+
+-- Helper: Add tactile iOS spring press-and-release animation to any button
+local function attachSpringPress(button, downScale, upScale)
+	downScale = downScale or 0.90
+	upScale = upScale or 1.05
+	local scaleObj = button:FindFirstChildOfClass("UIScale")
+	if not scaleObj then
+		scaleObj = Instance.new("UIScale")
+		scaleObj.Scale = 1
+		scaleObj.Parent = button
+	end
+
+	button.MouseButton1Down:Connect(function()
+		TweenService:Create(scaleObj, IOS_TIMING.PressDown, { Scale = downScale }):Play()
+	end)
+	button.MouseButton1Up:Connect(function()
+		TweenService:Create(scaleObj, IOS_TIMING.PressDown, { Scale = upScale }):Play()
+		task.delay(0.09, function()
+			if scaleObj.Parent then
+				TweenService:Create(scaleObj, IOS_TIMING.SpringRelease, { Scale = 1 }):Play()
+			end
+		end)
+	end)
+	button.MouseLeave:Connect(function()
+		if scaleObj.Parent and scaleObj.Scale ~= 1 then
+			TweenService:Create(scaleObj, IOS_TIMING.SpringRelease, { Scale = 1 }):Play()
+		end
+	end)
+	return scaleObj
+end
+
+--------------------------------------------------------------------------------
+-- HIGH-RESOLUTION ANTI-ALIASED SVG & ICON RASTERIZER (EditableImage)
+-- Renders SVG_CIRCLES and sidebar icons with sub-pixel anti-aliasing so they
+-- never suffer from Roblox's integer Frame pixel snapping!
+--------------------------------------------------------------------------------
+local CachedLogoContent = nil
+local CachedIconContents = {}
+
+local function getLogoImageContent()
+	if CachedLogoContent then
+		return CachedLogoContent
+	end
+	local ok, content = pcall(function()
+		-- 40x36 viewBox supersampled at 4x (160x144)
+		local w, h = 160, 144
+		local scale = 4.0
+		local editable = AssetService:CreateEditableImage({ Size = Vector2.new(w, h) })
+		local pixels = table.create(w * h * 4, 0)
+
+		-- In SVG_CIRCLES, centers are 7 units apart (cx = 7, 13, 20, 27, 33; cy = 4, 11, 18, 25, 32).
+		-- Using radius = c.r * 0.64 in SVG units makes the center circle (r=5.0 -> diameter 6.4 in a 7-unit cell)
+		-- bold and prominent while keeping every single one of the 21 dots cleanly separated!
+		local radiusFactor = 0.64
+
+		for py = 0, h - 1 do
+			local svgY = (py + 0.5) / scale
+			for px = 0, w - 1 do
+				local svgX = (px + 0.5) / scale
+				local maxAlpha = 0
+
+				for _, c in ipairs(SVG_CIRCLES) do
+					local dx = svgX - c.cx
+					local dy = svgY - c.cy
+					local dist = math.sqrt(dx * dx + dy * dy)
+					local rSvg = c.r * radiusFactor
+					-- Smooth 1.2px anti-aliased edge in pixel space
+					local edgeDistPx = (rSvg - dist) * scale
+					if edgeDistPx > -0.6 then
+						local cov = math.clamp(edgeDistPx + 0.6, 0, 1)
+						local a = cov * c.opacity
+						if a > maxAlpha then
+							maxAlpha = a
+						end
+					end
+				end
+
+				local idx = (py * w + px) * 4
+				pixels[idx + 1] = 255
+				pixels[idx + 2] = 255
+				pixels[idx + 3] = 255
+				pixels[idx + 4] = math.floor(math.clamp(maxAlpha, 0, 1) * 255 + 0.5)
+			end
+		end
+
+		editable:WritePixelsBuffer(Vector2.zero, Vector2.new(w, h), buffer.fromstring(
+			(function()
+				local b = buffer.create(w * h * 4)
+				for i = 1, w * h * 4 do
+					buffer.writeu8(b, i - 1, pixels[i])
+				end
+				return buffer.tostring(b)
+			end)()
+		))
+		return Content.fromObject(editable)
+	end)
+	if ok and content then
+		CachedLogoContent = content
+	end
+	return CachedLogoContent
+end
+
+local function createSvgLogo(parent, pixelSize, position, anchorPoint, zIndex)
+	local content = getLogoImageContent()
+	if content then
+		local img = Instance.new("ImageLabel")
+		img.Name = "SvgLogo"
+		img.Size = UDim2.fromOffset(pixelSize, math.floor(pixelSize * (36 / 40) + 0.5))
+		img.Position = position or UDim2.fromScale(0.5, 0.5)
+		img.AnchorPoint = anchorPoint or Vector2.new(0.5, 0.5)
+		img.BackgroundTransparency = 1
+		img.ImageContent = content
+		img.ImageColor3 = COLORS.White
+		img.ScaleType = Enum.ScaleType.Fit
+		img.ZIndex = zIndex or 5
+		img.Parent = parent
+		return img
+	end
+
+	-- Fallback if EditableImage is unavailable
+	local holder = Instance.new("Frame")
+	holder.Name = "SvgLogo"
+	holder.Size = UDim2.fromOffset(pixelSize, pixelSize)
+	holder.Position = position or UDim2.fromScale(0.5, 0.5)
+	holder.AnchorPoint = anchorPoint or Vector2.new(0.5, 0.5)
+	holder.BackgroundTransparency = 1
+	holder.ZIndex = zIndex or 5
+	holder.Parent = parent
+
+	for i, c in ipairs(SVG_CIRCLES) do
+		local dot = Instance.new("Frame")
+		local dScale = (c.r * 1.28) / 40
+		dot.Size = UDim2.fromScale(dScale, dScale)
+		dot.AnchorPoint = Vector2.new(0.5, 0.5)
+		dot.Position = UDim2.fromScale(c.cx / 40, c.cy / 36)
+		dot.BackgroundColor3 = COLORS.White
+		dot.BackgroundTransparency = math.clamp(1 - c.opacity, 0, 1)
+		dot.BorderSizePixel = 0
+		dot.ZIndex = (zIndex or 5) + 1
+		dot.Parent = holder
+		Instance.new("UIAspectRatioConstraint", dot).AspectRatio = 1
+		Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+	end
+	return holder
+end
+
+-- Distance from point (px, py) to line segment (ax, ay)-(bx, by)
+local function distToSegment(px, py, ax, ay, bx, by)
+	local vx, vy = bx - ax, by - ay
+	local wx, wy = px - ax, py - ay
+	local c1 = wx * vx + wy * vy
+	if c1 <= 0 then
+		return math.sqrt(wx * wx + wy * wy)
+	end
+	local c2 = vx * vx + vy * vy
+	if c2 <= c1 then
+		local dx, dy = px - bx, py - by
+		return math.sqrt(dx * dx + dy * dy)
+	end
+	local b = c1 / c2
+	local pbx, pby = ax + b * vx, ay + b * vy
+	local dx, dy = px - pbx, py - pby
+	return math.sqrt(dx * dx + dy * dy)
+end
+
+-- Distance to a circular arc centered at (cx, cy) with radius r, between angle1 and angle2 (in radians)
+local function distToCircleRing(px, py, cx, cy, r)
+	local dx, dy = px - cx, py - cy
+	return math.abs(math.sqrt(dx * dx + dy * dy) - r)
+end
+
+-- High-resolution 64x64 SDF anti-aliased vector icon generator
+local function getVectorIconContent(iconName)
+	if CachedIconContents[iconName] then
+		return CachedIconContents[iconName]
+	end
+
+	local ok, content = pcall(function()
+		local size = 64
+		local editable = AssetService:CreateEditableImage({ Size = Vector2.new(size, size) })
+		local buf = buffer.create(size * size * 4)
+		local strokeHalf = 2.1 -- 4.2px crisp stroke at 64x64
+
+		for py = 0, size - 1 do
+			local y = py + 0.5
+			for px = 0, size - 1 do
+				local x = px + 0.5
+				local d = 999
+
+				if iconName == "Settings" then
+					-- Crisp 8-tooth iOS/Lucide Gear Outline:
+					-- Hollow center circle (r = 9.5) + outer toothed gear ring
+					local dx, dy = x - 32, y - 32
+					local r = math.sqrt(dx * dx + dy * dy)
+					local angle = math.atan2(dy, dx)
+					-- Smooth 8-tooth wave modulation around outer radius (r = 18.5 .. 23.5)
+					local toothWave = math.clamp(math.cos(angle * 8) * 1.6, -1, 1)
+					local outerR = 20.5 + toothWave * 3.2
+					local innerR = 10.5
+					-- Distance to the hollow gear band [innerR, outerR]
+					if r >= innerR and r <= outerR then
+						d = -math.min(r - innerR, outerR - r)
+					elseif r < innerR then
+						d = innerR - r
+					else
+						d = r - outerR
+					end
+
+				elseif iconName == "Player" then
+					-- Single Person Icon: Head Circle + Smooth Curved Shoulder Arch
+					local dHead = distToCircleRing(x, y, 32, 19, 9.0) - strokeHalf
+					-- Shoulder arch: top half of circle centered at (32, 50) with radius 15.5, y in [34, 49]
+					local dArch = 999
+					if y >= 33 and y <= 49 then
+						dArch = distToCircleRing(x, y, 32, 50, 15.5) - strokeHalf
+					elseif y > 49 then
+						-- Rounded end caps at (32 - 15.5, 49) and (32 + 15.5, 49)
+						local dLeft = math.sqrt((x - 16.5)^2 + (y - 49)^2) - strokeHalf
+						local dRight = math.sqrt((x - 47.5)^2 + (y - 49)^2) - strokeHalf
+						dArch = math.min(dLeft, dRight)
+					end
+					d = math.min(dHead, dArch)
+
+				elseif iconName == "Players" then
+					-- Dual Person Icon (matches reference screenshot: primary user left-front, second user right-back)
+					local dHead1 = distToCircleRing(x, y, 25, 20, 8.2) - strokeHalf
+					local dArch1 = 999
+					if y >= 34 and y <= 49 then
+						dArch1 = distToCircleRing(x, y, 25, 50, 14.0) - strokeHalf
+					elseif y > 49 then
+						local dL = math.sqrt((x - 11.0)^2 + (y - 49)^2) - strokeHalf
+						local dR = math.sqrt((x - 39.0)^2 + (y - 49)^2) - strokeHalf
+						dArch1 = math.min(dL, dR)
+					end
+
+					-- Secondary person on the right (masked outside primary person's buffer so strokes never collide)
+					local dHead2 = 999
+					if x >= 31 then
+						dHead2 = distToCircleRing(x, y, 42, 21.5, 6.8) - (strokeHalf * 0.92)
+					end
+					local dArch2 = 999
+					if x >= 39 and y >= 35 and y <= 49 then
+						dArch2 = distToCircleRing(x, y, 42, 50, 11.5) - (strokeHalf * 0.92)
+					end
+					d = math.min(math.min(dHead1, dArch1), math.min(dHead2, dArch2))
+
+				elseif iconName == "Scripts" then
+					-- Rounded Terminal / Script Box [>_]
+					-- Rounded box from (10, 13) to (54, 51) with corner radius 8
+					local bx = math.max(math.abs(x - 32) - 14, 0)
+					local by = math.max(math.abs(y - 32) - 11, 0)
+					local boxDist = math.sqrt(bx * bx + by * by) - 8
+					local dBox = math.abs(boxDist) - strokeHalf
+
+					-- Chevron '>' inside left
+					local dChev1 = distToSegment(x, y, 20, 26, 27, 32) - strokeHalf
+					local dChev2 = distToSegment(x, y, 27, 32, 20, 38) - strokeHalf
+					-- Underscore '_' inside right
+					local dUnder = distToSegment(x, y, 33, 38, 43, 38) - strokeHalf
+
+					d = math.min(dBox, math.min(math.min(dChev1, dChev2), dUnder))
+
+				elseif iconName == "ChevronRight" then
+					local d1 = distToSegment(x, y, 26, 18, 39, 32) - (strokeHalf * 1.05)
+					local d2 = distToSegment(x, y, 39, 32, 26, 46) - (strokeHalf * 1.05)
+					d = math.min(d1, d2)
+
+				elseif iconName == "Search" then
+					local dCircle = distToCircleRing(x, y, 27, 27, 13) - strokeHalf
+					local dHandle = distToSegment(x, y, 37, 37, 50, 50) - strokeHalf
+					d = math.min(dCircle, dHandle)
+				end
+
+				local alpha = math.clamp(0.65 - d, 0, 1)
+				local idx = (py * size + px) * 4
+				buffer.writeu8(buf, idx, 255)
+				buffer.writeu8(buf, idx + 1, 255)
+				buffer.writeu8(buf, idx + 2, 255)
+				buffer.writeu8(buf, idx + 3, math.floor(alpha * 255 + 0.5))
+			end
+		end
+
+		editable:WritePixelsBuffer(Vector2.zero, Vector2.new(size, size), buf)
+		return Content.fromObject(editable)
+	end)
+
+	if ok and content then
+		CachedIconContents[iconName] = content
+	end
+	return CachedIconContents[iconName]
+end
+
+local function createVectorIcon(parent, iconName, color, scaleSize)
+	color = color or COLORS.IconLight
+	scaleSize = scaleSize or 22
+	local content = getVectorIconContent(iconName)
+	if content then
+		local img = Instance.new("ImageLabel")
+		img.Name = "Icon_" .. iconName
+		img.Size = UDim2.fromOffset(scaleSize, scaleSize)
+		img.AnchorPoint = Vector2.new(0.5, 0.5)
+		img.Position = UDim2.fromScale(0.5, 0.5)
+		img.BackgroundTransparency = 1
+		img.ImageContent = content
+		img.ImageColor3 = color
+		img.ZIndex = (parent.ZIndex or 20) + 1
+		img.Parent = parent
+		return img
+	end
+
+	local fallback = Instance.new("Frame")
+	fallback.Size = UDim2.fromOffset(scaleSize, scaleSize)
+	fallback.AnchorPoint = Vector2.new(0.5, 0.5)
+	fallback.Position = UDim2.fromScale(0.5, 0.5)
+	fallback.BackgroundTransparency = 1
+	fallback.Parent = parent
+	return fallback
+end
+
+-- Notification Action Icons (Checkmark & X inside Circle)
+local function createCircleIcon(parent, iconType, zIndex, circleSize)
+	circleSize = circleSize or 23
+	local circle = Instance.new("Frame")
+	circle.Name = "CircleIcon_" .. iconType
+	circle.Size = UDim2.fromOffset(circleSize, circleSize)
+	circle.AnchorPoint = Vector2.new(0.5, 0.5)
+	circle.Position = UDim2.fromScale(0.5, 0.5)
+	circle.BackgroundTransparency = 1
+	circle.ZIndex = zIndex or 10
+	circle.Parent = parent
+
+	Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
+
+	local stroke = Instance.new("UIStroke", circle)
+	stroke.Color = COLORS.White
+	stroke.Thickness = 1.8
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+	if iconType == "Check" then
+		local leg1 = Instance.new("Frame", circle)
+		leg1.Size = UDim2.fromOffset(5, 1.8)
+		leg1.AnchorPoint = Vector2.new(0.5, 0.5)
+		leg1.Position = UDim2.new(0.5, -2.6, 0.5, 1.5)
+		leg1.Rotation = 45
+		leg1.BackgroundColor3 = COLORS.White
+		leg1.BorderSizePixel = 0
+		leg1.ZIndex = (zIndex or 10) + 1
+		Instance.new("UICorner", leg1).CornerRadius = UDim.new(1, 0)
+
+		local leg2 = Instance.new("Frame", circle)
+		leg2.Size = UDim2.fromOffset(9.5, 1.8)
+		leg2.AnchorPoint = Vector2.new(0.5, 0.5)
+		leg2.Position = UDim2.new(0.5, 1.8, 0.5, 0.2)
+		leg2.Rotation = -45
+		leg2.BackgroundColor3 = COLORS.White
+		leg2.BorderSizePixel = 0
+		leg2.ZIndex = (zIndex or 10) + 1
+		Instance.new("UICorner", leg2).CornerRadius = UDim.new(1, 0)
+	elseif iconType == "X" then
+		for _, rot in ipairs({45, -45}) do
+			local bar = Instance.new("Frame", circle)
+			bar.Size = UDim2.fromOffset(10.5, 1.8)
+			bar.AnchorPoint = Vector2.new(0.5, 0.5)
+			bar.Position = UDim2.fromScale(0.5, 0.5)
+			bar.Rotation = rot
+			bar.BackgroundColor3 = COLORS.White
+			bar.BorderSizePixel = 0
+			bar.ZIndex = (zIndex or 10) + 1
+			Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+		end
+	end
+
+	return circle
+end
+
+--------------------------------------------------------------------------------
+-- NOTIFICATION SYSTEM (No outline, High-Res White SVG_CIRCLES Logo, iOS Timings)
+--------------------------------------------------------------------------------
+local ActiveNotifications = {}
+local BASE_TOP_Y = 16
+local NOTIF_WIDTH = 280
+local NOTIF_HEIGHT = 44
+local NOTIF_GAP = 8
+
+local function restackNotifications()
+	for index, item in ipairs(ActiveNotifications) do
+		if not item.Dismissing and not item.Dragging then
+			local targetY = BASE_TOP_Y + (index - 1) * (NOTIF_HEIGHT + NOTIF_GAP)
+			item.TargetY = targetY
+			TweenService:Create(
+				item.Wrapper,
+				IOS_TIMING.Present,
+				{ Position = UDim2.new(0.5, 0, 0, targetY) }
+			):Play()
+		end
+	end
+end
+
+local function removeNotificationFromStack(notifObj)
+	for i, item in ipairs(ActiveNotifications) do
+		if item == notifObj then
+			table.remove(ActiveNotifications, i)
+			break
+		end
+	end
+	restackNotifications()
+end
+
+local function createNotification(options)
+	options = options or {}
+	local titleText = options.Title or "Surface Script"
+	local subtitleText = options.Subtitle or "Want to load everything?"
+	local notifType = options.Type or "Regular"
+	local pillWidth = NOTIF_WIDTH
+	local pillHeight = NOTIF_HEIGHT
+	local checkBtnWidth = 46
+	local cancelBtnWidth = 44
+
+	local wrapper = Instance.new("Frame")
+	wrapper.Name = "NotificationWrapper"
+	wrapper.Size = UDim2.fromOffset(pillWidth, pillHeight)
+	wrapper.AnchorPoint = Vector2.new(0.5, 0)
+	wrapper.Position = UDim2.new(0.5, 0, 0, -pillHeight - 25)
+	wrapper.BackgroundTransparency = 1
+	wrapper.Parent = ScreenGui
+
+	local targetScale = UISettings.CompactNotifications and 0.90 or 1.0
+	local uiScale = Instance.new("UIScale")
+	uiScale.Scale = targetScale * 0.92
+	uiScale.Parent = wrapper
+
+	-- Pill CanvasGroup (NO outline around notification!)
+	local pillCanvas = Instance.new("CanvasGroup")
+	pillCanvas.Name = "PillCanvas"
+	pillCanvas.Size = UDim2.fromScale(1, 1)
+	pillCanvas.BackgroundTransparency = 1
+	pillCanvas.BorderSizePixel = 0
+	pillCanvas.ClipsDescendants = true
+	pillCanvas.Parent = wrapper
+
+	local pillCorner = Instance.new("UICorner")
+	pillCorner.CornerRadius = UDim.new(1, 0)
+	pillCorner.Parent = pillCanvas
+
+	local bgFrame = Instance.new("Frame")
+	bgFrame.Name = "PillBackground"
+	bgFrame.Size = UDim2.fromScale(1, 1)
+	bgFrame.BackgroundColor3 = COLORS.White
+	bgFrame.BackgroundTransparency = UISettings.GlassUI and 0.12 or 0
+	bgFrame.BorderSizePixel = 0
+	bgFrame.ZIndex = 1
+	bgFrame.Parent = pillCanvas
+
+	local bgGradient = Instance.new("UIGradient")
+	bgGradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, COLORS.NotifTop),
+		ColorSequenceKeypoint.new(1, COLORS.NotifBottom),
+	})
+	bgGradient.Rotation = 90
+	bgGradient.Parent = bgFrame
+
+	-- High-Res Anti-Aliased White SVG_CIRCLES Logo in the left notification gap
+	local logoWidget = createSvgLogo(
+		pillCanvas,
+		26,
+		UDim2.new(0, 25, 0.5, 0),
+		Vector2.new(0.5, 0.5),
+		4
+	)
+
+	-- Text container next to the logo
+	local rightReserved = (notifType == "Confirm") and (checkBtnWidth + cancelBtnWidth) or checkBtnWidth
+	local textContainer = Instance.new("Frame")
+	textContainer.Name = "TextContainer"
+	textContainer.Size = UDim2.new(1, -rightReserved - 50, 1, 0)
+	textContainer.Position = UDim2.fromOffset(45, 0)
+	textContainer.BackgroundTransparency = 1
+	textContainer.ZIndex = 3
+	textContainer.Parent = pillCanvas
+
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "Title"
+	titleLabel.Size = UDim2.new(1, 0, 0, 16)
+	titleLabel.Position = UDim2.fromOffset(0, 7)
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Font = Enum.Font.GothamBold
+	titleLabel.Text = titleText
+	titleLabel.TextColor3 = COLORS.White
+	titleLabel.TextSize = 13
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	titleLabel.ZIndex = 3
+	titleLabel.Parent = textContainer
+
+	local subtitleLabel = Instance.new("TextLabel")
+	subtitleLabel.Name = "Subtitle"
+	subtitleLabel.Size = UDim2.new(1, 0, 0, 15)
+	subtitleLabel.Position = UDim2.fromOffset(0, 22)
+	subtitleLabel.BackgroundTransparency = 1
+	subtitleLabel.Font = Enum.Font.Gotham
+	subtitleLabel.Text = subtitleText
+	subtitleLabel.TextColor3 = COLORS.SubText
+	subtitleLabel.TextSize = 11
+	subtitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	subtitleLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	subtitleLabel.ZIndex = 3
+	subtitleLabel.Parent = textContainer
+
+	-- Expanding Fill Overlay
+	local fillOverlay = Instance.new("Frame")
+	fillOverlay.Name = "FillOverlay"
+	fillOverlay.BackgroundTransparency = 1
+	fillOverlay.BorderSizePixel = 0
+	fillOverlay.ZIndex = 8
+	fillOverlay.Parent = pillCanvas
+
+	-- Rightmost Checkmark Button
+	local checkBtn = Instance.new("TextButton")
+	checkBtn.Name = "CheckButton"
+	checkBtn.Size = UDim2.new(0, checkBtnWidth, 1, 0)
+	checkBtn.Position = UDim2.new(1, -checkBtnWidth, 0, 0)
+	checkBtn.BackgroundColor3 = COLORS.CheckGray
+	checkBtn.BorderSizePixel = 0
+	checkBtn.Text = ""
+	checkBtn.AutoButtonColor = false
+	checkBtn.ZIndex = 5
+	checkBtn.Parent = pillCanvas
+
+	local checkIconHolder = Instance.new("Frame")
+	checkIconHolder.Name = "CheckIconHolder"
+	checkIconHolder.Size = UDim2.new(0, checkBtnWidth, 1, 0)
+	checkIconHolder.Position = UDim2.new(1, -checkBtnWidth, 0, 0)
+	checkIconHolder.BackgroundTransparency = 1
+	checkIconHolder.ZIndex = 12
+	checkIconHolder.Parent = pillCanvas
+	local checkIcon = createCircleIcon(checkIconHolder, "Check", 12, 23)
+
+	local cancelBtn, cancelIconHolder, cancelIcon
+	if notifType == "Confirm" then
+		cancelBtn = Instance.new("TextButton")
+		cancelBtn.Name = "CancelButton"
+		cancelBtn.Size = UDim2.new(0, cancelBtnWidth, 1, 0)
+		cancelBtn.Position = UDim2.new(1, -(checkBtnWidth + cancelBtnWidth), 0, 0)
+		cancelBtn.BackgroundColor3 = COLORS.CancelRed
+		cancelBtn.BorderSizePixel = 0
+		cancelBtn.Text = ""
+		cancelBtn.AutoButtonColor = false
+		cancelBtn.ZIndex = 5
+		cancelBtn.Parent = pillCanvas
+
+		cancelIconHolder = Instance.new("Frame")
+		cancelIconHolder.Name = "CancelIconHolder"
+		cancelIconHolder.Size = UDim2.new(0, cancelBtnWidth, 1, 0)
+		cancelIconHolder.Position = UDim2.new(1, -(checkBtnWidth + cancelBtnWidth), 0, 0)
+		cancelIconHolder.BackgroundTransparency = 1
+		cancelIconHolder.ZIndex = 12
+		cancelIconHolder.Parent = pillCanvas
+		cancelIcon = createCircleIcon(cancelIconHolder, "X", 12, 23)
+	end
+
+	local notifObj = {
+		Wrapper = wrapper,
+		TargetY = BASE_TOP_Y,
+		Dismissing = false,
+		Dragging = false,
+	}
+	table.insert(ActiveNotifications, notifObj)
+
+	local myIndex = #ActiveNotifications
+	local initialTargetY = BASE_TOP_Y + (myIndex - 1) * (NOTIF_HEIGHT + NOTIF_GAP)
+	notifObj.TargetY = initialTargetY
+
+	TweenService:Create(wrapper, IOS_TIMING.Present, {
+		Position = UDim2.new(0.5, 0, 0, initialTargetY),
+	}):Play()
+	TweenService:Create(uiScale, IOS_TIMING.Present, {
+		Scale = targetScale,
+	}):Play()
+
+	local function fadeElement(rootInst, duration)
+		if not rootInst then return end
+		local info = TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		if rootInst:IsA("ImageLabel") then
+			TweenService:Create(rootInst, info, { ImageTransparency = 1 }):Play()
+		end
+		for _, desc in ipairs(rootInst:GetDescendants()) do
+			if desc:IsA("UIStroke") then
+				TweenService:Create(desc, info, { Transparency = 1 }):Play()
+			elseif desc:IsA("Frame") then
+				TweenService:Create(desc, info, { BackgroundTransparency = 1 }):Play()
+			elseif desc:IsA("ImageLabel") then
+				TweenService:Create(desc, info, { ImageTransparency = 1 }):Play()
+			end
+		end
+	end
+
+	local function dismissUpward(useFastSwipe)
+		if notifObj.Dismissing then return end
+		notifObj.Dismissing = true
+		removeNotificationFromStack(notifObj)
+
+		local tweenInfo = useFastSwipe and IOS_TIMING.SwipeDismiss or IOS_TIMING.Dismiss
+		local t1 = TweenService:Create(wrapper, tweenInfo, {
+			Position = UDim2.new(0.5, 0, 0, -pillHeight - 30),
+		})
+		TweenService:Create(uiScale, tweenInfo, {
+			Scale = targetScale * 0.92,
+		}):Play()
+		TweenService:Create(pillCanvas, tweenInfo, {
+			GroupTransparency = 0.15,
+		}):Play()
+		t1:Play()
+		t1.Completed:Connect(function()
+			wrapper:Destroy()
+		end)
+	end
+
+	local function triggerButtonFillAndDismiss(buttonFrame, fillColor, otherIcon, callback)
+		if notifObj.Dismissing then return end
+		notifObj.Dismissing = true
+
+		fillOverlay.BackgroundColor3 = fillColor
+		fillOverlay.BackgroundTransparency = 0
+		fillOverlay.Size = buttonFrame.Size
+		fillOverlay.Position = buttonFrame.Position
+
+		if otherIcon then
+			fadeElement(otherIcon, 0.14)
+		end
+		fadeElement(logoWidget, 0.14)
+		TweenService:Create(titleLabel, IOS_TIMING.ContentFade, { TextTransparency = 1 }):Play()
+		TweenService:Create(subtitleLabel, IOS_TIMING.ContentFade, { TextTransparency = 1 }):Play()
+
+		TweenService:Create(uiScale, IOS_TIMING.PressDown, { Scale = targetScale * 0.96 }):Play()
+		task.delay(0.10, function()
+			if uiScale.Parent then
+				TweenService:Create(uiScale, IOS_TIMING.ColorFill, { Scale = targetScale }):Play()
+			end
+		end)
+
+		local fillTween = TweenService:Create(fillOverlay, IOS_TIMING.ColorFill, {
+			Size = UDim2.fromScale(1, 1),
+			Position = UDim2.fromScale(0, 0),
+		})
+		fillTween:Play()
+
+		fillTween.Completed:Connect(function()
+			if callback then
+				task.spawn(callback)
+			end
+			task.wait(0.15)
+			removeNotificationFromStack(notifObj)
+			local exitTween = TweenService:Create(wrapper, IOS_TIMING.Dismiss, {
+				Position = UDim2.new(0.5, 0, 0, -pillHeight - 30),
+			})
+			TweenService:Create(uiScale, IOS_TIMING.Dismiss, { Scale = targetScale * 0.92 }):Play()
+			exitTween.Completed:Connect(function()
+				wrapper:Destroy()
+			end)
+			exitTween:Play()
+		end)
+	end
+
+	checkBtn.MouseEnter:Connect(function()
+		if not notifObj.Dismissing then
+			TweenService:Create(checkBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.CheckGrayHover }):Play()
+		end
+	end)
+	checkBtn.MouseLeave:Connect(function()
+		if not notifObj.Dismissing then
+			TweenService:Create(checkBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.CheckGray }):Play()
+		end
+	end)
+	checkBtn.Activated:Connect(function()
+		if notifObj.Dragging then return end
+		triggerButtonFillAndDismiss(checkBtn, COLORS.CheckGray, cancelIcon, options.OnConfirm)
+	end)
+
+	if cancelBtn then
+		cancelBtn.MouseEnter:Connect(function()
+			if not notifObj.Dismissing then
+				TweenService:Create(cancelBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.CancelRedHover }):Play()
+			end
+		end)
+		cancelBtn.MouseLeave:Connect(function()
+			if not notifObj.Dismissing then
+				TweenService:Create(cancelBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.CancelRed }):Play()
+			end
+		end)
+		cancelBtn.Activated:Connect(function()
+			if notifObj.Dragging then return end
+			triggerButtonFillAndDismiss(cancelBtn, COLORS.CancelRed, checkIcon, options.OnCancel)
+		end)
+	end
+
+	-- iOS Swipe-Up to Dismiss Gesture
+	local dragStartPos = nil
+	local startWrapperY = 0
+	local lastDragY = 0
+	local lastDragTime = 0
+	local velocityY = 0
+
+	pillCanvas.InputBegan:Connect(function(input)
+		if notifObj.Dismissing or not UISettings.SwipeToDismiss then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragStartPos = input.Position
+			startWrapperY = wrapper.Position.Y.Offset
+			lastDragY = input.Position.Y
+			lastDragTime = os.clock()
+			velocityY = 0
+		end
+	end)
+
+	local inputChangedConn
+	local inputEndedConn
+
+	inputChangedConn = UserInputService.InputChanged:Connect(function(input)
+		if not dragStartPos or notifObj.Dismissing or not UISettings.SwipeToDismiss then return end
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			local deltaY = input.Position.Y - dragStartPos.Y
+			if math.abs(deltaY) > 5 then
+				notifObj.Dragging = true
+			end
+			if notifObj.Dragging then
+				local now = os.clock()
+				local dt = math.max(now - lastDragTime, 0.001)
+				velocityY = (input.Position.Y - lastDragY) / dt
+				lastDragY = input.Position.Y
+				lastDragTime = now
+
+				local newY
+				if deltaY < 0 then
+					newY = startWrapperY + deltaY
+				else
+					newY = startWrapperY + (deltaY * 0.28)
+				end
+				wrapper.Position = UDim2.new(0.5, 0, 0, newY)
+			end
+		end
+	end)
+
+	inputEndedConn = UserInputService.InputEnded:Connect(function(input)
+		if not dragStartPos then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			local wasDragging = notifObj.Dragging
+			local deltaY = input.Position.Y - dragStartPos.Y
+			dragStartPos = nil
+
+			if wasDragging then
+				task.delay(0.05, function()
+					notifObj.Dragging = false
+				end)
+				if deltaY < -18 or velocityY < -320 then
+					dismissUpward(true)
+				else
+					TweenService:Create(wrapper, IOS_TIMING.SnapBack, {
+						Position = UDim2.new(0.5, 0, 0, notifObj.TargetY),
+					}):Play()
+				end
+			end
+		end
+	end)
+
+	wrapper.Destroying:Connect(function()
+		if inputChangedConn then inputChangedConn:Disconnect() end
+		if inputEndedConn then inputEndedConn:Disconnect() end
+	end)
+
+	if options.Duration and options.Duration > 0 then
+		task.delay(options.Duration, function()
+			if wrapper.Parent and not notifObj.Dismissing then
+				dismissUpward(false)
+			end
+		end)
+	end
+
+	return notifObj
+end
+
+--------------------------------------------------------------------------------
+-- EXECUTOR UI SHELL:
+--   - Right Vertical Pill Dock (Logo, Scripts, Settings, Player, Players, Hide >)
+--   - Active button outline NEVER disappears when clicking the active button to close!
+--   - Selecting any sidebar button returns the draggable menu to its regular spot!
+--   - Empty/Clean pages (zero fake placeholders)
+--   - Scripts Page: "Universal" section at top, scrolling down shows "Script for this game"
+--   - Settings Page: Real UI settings (Glass UI vs Normal UI, Background Blur, etc.)
+--------------------------------------------------------------------------------
+local SuiteBuilt = false
+local SuiteVisible = false
+local DockHiddenToEdge = false
+local WindowOpen = true
+local ActiveTabId = "Scripts"
+
+local DockFrame = nil
+local MainWindowFrame = nil
+local RestoreButton = nil
+local SlidingActiveBox = nil
+local TabButtons = {}
+local TabPages = {}
+local HeaderTitleLabel = nil
+local HeaderIconContainer = nil
+local GlassBlurEffect = nil
+
+local function updateWorldBlur()
+	pcall(function()
+		if not GlassBlurEffect or not GlassBlurEffect.Parent then
+			GlassBlurEffect = Lighting:FindFirstChild("SurfaceGlassBlur") or Instance.new("BlurEffect")
+			GlassBlurEffect.Name = "SurfaceGlassBlur"
+			GlassBlurEffect.Size = 0
+			GlassBlurEffect.Parent = Lighting
+		end
+		local shouldBlur = SuiteVisible and not DockHiddenToEdge and WindowOpen and UISettings.BackgroundBlur
+		TweenService:Create(GlassBlurEffect, IOS_TIMING.PanelOpen, {
+			Size = shouldBlur and 8 or 0,
+		}):Play()
+	end)
+end
+
+local function buildExecutorSuite()
+	if SuiteBuilt and DockFrame and DockFrame.Parent then
+		return
+	end
+	SuiteBuilt = true
+
+	-- 1. RIGHT VERTICAL PILL DOCK
+	local dockWidth = 58
+	local dockHeight = 310
+
+	DockFrame = Instance.new("Frame")
+	DockFrame.Name = "RightVerticalDock"
+	DockFrame.Size = UDim2.fromOffset(dockWidth, dockHeight)
+	DockFrame.AnchorPoint = Vector2.new(1, 0.5)
+	DockFrame.Position = UDim2.new(1, 90, 0.5, 0)
+	DockFrame.ClipsDescendants = false -- Prevents outline from ever cutting out!
+	DockFrame.ZIndex = 20
+	DockFrame.Parent = ScreenGui
+	registerThemedSurface(DockFrame, UDim.new(1, 0), "Window")
+
+	-- Top Logo Badge inside Dock
+	local logoBadge = Instance.new("Frame")
+	logoBadge.Name = "LogoBadge"
+	logoBadge.Size = UDim2.fromOffset(42, 42)
+	logoBadge.AnchorPoint = Vector2.new(0.5, 0)
+	logoBadge.Position = UDim2.new(0.5, 0, 0, 9)
+	logoBadge.ClipsDescendants = false
+	logoBadge.ZIndex = 21
+	logoBadge.Parent = DockFrame
+	registerThemedSurface(logoBadge, UDim.new(1, 0), "Card")
+
+	createSvgLogo(logoBadge, 27, UDim2.fromScale(0.5, 0.5), Vector2.new(0.5, 0.5), 22)
+
+	-- Tab Icons Container inside Dock
+	local navContainer = Instance.new("Frame")
+	navContainer.Name = "NavContainer"
+	navContainer.Size = UDim2.new(1, 0, 1, -110)
+	navContainer.Position = UDim2.fromOffset(0, 60)
+	navContainer.BackgroundTransparency = 1
+	navContainer.ZIndex = 21
+	navContainer.Parent = DockFrame
+
+	-- Sliding Active Highlight Box + Outline + Left White Bar
+	-- Stays visible even when clicking the active tab button to close the window!
+	SlidingActiveBox = Instance.new("Frame")
+	SlidingActiveBox.Name = "SlidingActiveBox"
+	SlidingActiveBox.Size = UDim2.fromOffset(42, 40)
+	SlidingActiveBox.AnchorPoint = Vector2.new(0.5, 0)
+	SlidingActiveBox.Position = UDim2.new(0.5, 0, 0, 0)
+	SlidingActiveBox.BackgroundColor3 = Color3.fromRGB(110, 118, 136)
+	SlidingActiveBox.BackgroundTransparency = 0.62
+	SlidingActiveBox.BorderSizePixel = 0
+	SlidingActiveBox.ClipsDescendants = false
+	SlidingActiveBox.ZIndex = 21
+	SlidingActiveBox.Parent = navContainer
+	Instance.new("UICorner", SlidingActiveBox).CornerRadius = UDim.new(0, 13)
+
+	local activeBoxStroke = Instance.new("UIStroke", SlidingActiveBox)
+	activeBoxStroke.Color = Color3.fromRGB(195, 205, 225)
+	activeBoxStroke.Thickness = 1.2
+	activeBoxStroke.Transparency = 0.25
+	activeBoxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+	local leftPill = Instance.new("Frame", SlidingActiveBox)
+	leftPill.Name = "LeftActivePill"
+	leftPill.Size = UDim2.fromOffset(3.5, 14)
+	leftPill.AnchorPoint = Vector2.new(0.5, 0.5)
+	leftPill.Position = UDim2.new(0, 1, 0.5, 0)
+	leftPill.BackgroundColor3 = COLORS.White
+	leftPill.BorderSizePixel = 0
+	leftPill.ZIndex = 24
+	Instance.new("UICorner", leftPill).CornerRadius = UDim.new(1, 0)
+
+	-- Bottom Divider + Hide Chevron (>) inside Dock
+	local bottomDivider = Instance.new("Frame")
+	bottomDivider.Size = UDim2.fromOffset(28, 1)
+	bottomDivider.AnchorPoint = Vector2.new(0.5, 1)
+	bottomDivider.Position = UDim2.new(0.5, 0, 1, -44)
+	bottomDivider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	bottomDivider.BackgroundTransparency = 0.84
+	bottomDivider.BorderSizePixel = 0
+	bottomDivider.ZIndex = 21
+	bottomDivider.Parent = DockFrame
+
+	local hideDockBtn = Instance.new("TextButton")
+	hideDockBtn.Name = "HideDockButton"
+	hideDockBtn.Size = UDim2.fromOffset(42, 34)
+	hideDockBtn.AnchorPoint = Vector2.new(0.5, 1)
+	hideDockBtn.Position = UDim2.new(0.5, 0, 1, -6)
+	hideDockBtn.BackgroundTransparency = 1
+	hideDockBtn.Text = ""
+	hideDockBtn.ZIndex = 22
+	hideDockBtn.Parent = DockFrame
+	createVectorIcon(hideDockBtn, "ChevronRight", COLORS.IconLight, 20)
+	attachSpringPress(hideDockBtn, 0.82, 1.08)
+
+	-- Floating Restore Button (shown on right screen edge when user clicks Hide >)
+	RestoreButton = Instance.new("TextButton")
+	RestoreButton.Name = "RestoreSidebarBtn"
+	RestoreButton.Size = UDim2.fromOffset(44, 44)
+	RestoreButton.AnchorPoint = Vector2.new(1, 0.5)
+	RestoreButton.Position = UDim2.new(1, 60, 0.5, 0)
+	RestoreButton.Text = ""
+	RestoreButton.AutoButtonColor = false
+	RestoreButton.ClipsDescendants = false
+	RestoreButton.ZIndex = 25
+	RestoreButton.Parent = ScreenGui
+	registerThemedSurface(RestoreButton, UDim.new(1, 0), "Window")
+	createSvgLogo(RestoreButton, 26, UDim2.fromScale(0.5, 0.5), Vector2.new(0.5, 0.5), 26)
+	attachSpringPress(RestoreButton, 0.86, 1.06)
+
+	-- 2. MAIN CONTENT WINDOW
+	local winWidth = 340
+	local winHeight = 430
+
+	MainWindowFrame = Instance.new("Frame")
+	MainWindowFrame.Name = "MainContentWindow"
+	MainWindowFrame.Size = UDim2.fromOffset(winWidth, winHeight)
+	MainWindowFrame.AnchorPoint = Vector2.new(1, 0.5)
+	MainWindowFrame.Position = REGULAR_WINDOW_POS
+	MainWindowFrame.ClipsDescendants = false -- Keep false on outer frame so UIStroke never cuts out!
+	MainWindowFrame.ZIndex = 18
+	MainWindowFrame.Parent = ScreenGui
+	registerThemedSurface(MainWindowFrame, UDim.new(0, 24), "Window")
+
+	local winScale = Instance.new("UIScale")
+	winScale.Scale = 0.92
+	winScale.Parent = MainWindowFrame
+
+	local draggingWin = false
+	local winDragStart = nil
+	local winStartPos = nil
+
+	local topGrabArea = Instance.new("Frame")
+	topGrabArea.Name = "TopGrabArea"
+	topGrabArea.Size = UDim2.new(1, 0, 0, 52)
+	topGrabArea.BackgroundTransparency = 1
+	topGrabArea.ZIndex = 22
+	topGrabArea.Parent = MainWindowFrame
+
+	local grabberPill = Instance.new("Frame")
+	grabberPill.Size = UDim2.fromOffset(40, 4)
+	grabberPill.AnchorPoint = Vector2.new(0.5, 0)
+	grabberPill.Position = UDim2.new(0.5, 0, 0, 8)
+	grabberPill.BackgroundColor3 = Color3.fromRGB(200, 210, 228)
+	grabberPill.BackgroundTransparency = 0.55
+	grabberPill.BorderSizePixel = 0
+	grabberPill.ZIndex = 22
+	grabberPill.Parent = topGrabArea
+	Instance.new("UICorner", grabberPill).CornerRadius = UDim.new(1, 0)
+
+	local headerHolder = Instance.new("Frame")
+	headerHolder.Name = "HeaderHolder"
+	headerHolder.Size = UDim2.new(1, 0, 0, 26)
+	headerHolder.Position = UDim2.fromOffset(0, 20)
+	headerHolder.BackgroundTransparency = 1
+	headerHolder.ZIndex = 22
+	headerHolder.Parent = topGrabArea
+
+	local headerLayout = Instance.new("UIListLayout")
+	headerLayout.FillDirection = Enum.FillDirection.Horizontal
+	headerLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	headerLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	headerLayout.Padding = UDim.new(0, 8)
+	headerLayout.Parent = headerHolder
+
+	HeaderIconContainer = Instance.new("Frame")
+	HeaderIconContainer.Size = UDim2.fromOffset(22, 22)
+	HeaderIconContainer.BackgroundTransparency = 1
+	HeaderIconContainer.LayoutOrder = 1
+	HeaderIconContainer.ZIndex = 22
+	HeaderIconContainer.Parent = headerHolder
+
+	HeaderTitleLabel = Instance.new("TextLabel")
+	HeaderTitleLabel.Size = UDim2.fromOffset(0, 22)
+	HeaderTitleLabel.AutomaticSize = Enum.AutomaticSize.X
+	HeaderTitleLabel.BackgroundTransparency = 1
+	HeaderTitleLabel.Font = Enum.Font.GothamBold
+	HeaderTitleLabel.Text = "SCRIPTS"
+	HeaderTitleLabel.TextColor3 = COLORS.White
+	HeaderTitleLabel.TextSize = 15
+	HeaderTitleLabel.LayoutOrder = 2
+	HeaderTitleLabel.ZIndex = 22
+	HeaderTitleLabel.Parent = headerHolder
+
+	topGrabArea.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			draggingWin = true
+			winDragStart = input.Position
+			winStartPos = MainWindowFrame.Position
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if draggingWin and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - winDragStart
+			MainWindowFrame.Position = UDim2.new(
+				winStartPos.X.Scale,
+				winStartPos.X.Offset + delta.X,
+				winStartPos.Y.Scale,
+				winStartPos.Y.Offset + delta.Y
+			)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			draggingWin = false
+		end
+	end)
+
+	-- Inner clipping container for pages so borders on MainWindowFrame never get clipped
+	local pagesHolder = Instance.new("Frame")
+	pagesHolder.Name = "PagesHolder"
+	pagesHolder.Size = UDim2.new(1, -24, 1, -64)
+	pagesHolder.Position = UDim2.fromOffset(12, 54)
+	pagesHolder.BackgroundTransparency = 1
+	pagesHolder.ClipsDescendants = true
+	pagesHolder.ZIndex = 19
+	pagesHolder.Parent = MainWindowFrame
+
+	----------------------------------------------------------------------------
+	-- PAGE 1: SCRIPTS (Top: "Universal" section; Scrolling down: "Script for this game" section)
+	-- Kept completely empty inside the containers (no fake placeholder scripts!)
+	----------------------------------------------------------------------------
+	local function createScriptsPage()
+		local pageWrap = Instance.new("CanvasGroup")
+		pageWrap.Name = "Page_Scripts"
+		pageWrap.Size = UDim2.fromScale(1, 1)
+		pageWrap.BackgroundTransparency = 1
+		pageWrap.BorderSizePixel = 0
+		pageWrap.Visible = false
+		pageWrap.Parent = pagesHolder
+
+		local pageScale = Instance.new("UIScale", pageWrap)
+		pageScale.Scale = 1
+
+		local scroll = Instance.new("ScrollingFrame")
+		scroll.Name = "ScriptsScroll"
+		scroll.Size = UDim2.fromScale(1, 1)
+		scroll.BackgroundTransparency = 1
+		scroll.BorderSizePixel = 0
+		scroll.ScrollBarThickness = 2
+		scroll.ScrollBarImageColor3 = Color3.fromRGB(140, 150, 175)
+		scroll.CanvasSize = UDim2.new(0, 0, 0, 540) -- Scrollable down to "Script for this game"
+		scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		scroll.Parent = pageWrap
+
+		local pad = Instance.new("UIPadding", scroll)
+		pad.PaddingTop = UDim.new(0, 2)
+		pad.PaddingBottom = UDim.new(0, 12)
+		pad.PaddingLeft = UDim.new(0, 2)
+		pad.PaddingRight = UDim.new(0, 4)
+
+		local layout = Instance.new("UIListLayout", scroll)
+		layout.FillDirection = Enum.FillDirection.Vertical
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+		layout.Padding = UDim.new(0, 10)
+
+		-- Section 1: UNIVERSAL
+		local uniHeader = Instance.new("TextLabel", scroll)
+		uniHeader.Name = "UniversalHeader"
+		uniHeader.LayoutOrder = 1
+		uniHeader.Size = UDim2.new(1, 0, 0, 20)
+		uniHeader.BackgroundTransparency = 1
+		uniHeader.Font = Enum.Font.GothamBold
+		uniHeader.Text = "Universal"
+		uniHeader.TextColor3 = COLORS.White
+		uniHeader.TextSize = 14
+		uniHeader.TextXAlignment = Enum.TextXAlignment.Left
+
+		local uniContainer = Instance.new("Frame", scroll)
+		uniContainer.Name = "UniversalScriptsContainer"
+		uniContainer.LayoutOrder = 2
+		uniContainer.Size = UDim2.new(1, 0, 0, 240)
+		uniContainer.ClipsDescendants = false
+		registerThemedSurface(uniContainer, UDim.new(0, 18), "Card")
+
+		-- Section 2 (Scrolling down): SCRIPT FOR THIS GAME
+		local gameHeaderWrap = Instance.new("Frame", scroll)
+		gameHeaderWrap.Name = "GameScriptHeaderWrap"
+		gameHeaderWrap.LayoutOrder = 3
+		gameHeaderWrap.Size = UDim2.new(1, 0, 0, 34)
+		gameHeaderWrap.BackgroundTransparency = 1
+
+		local gameHeader = Instance.new("TextLabel", gameHeaderWrap)
+		gameHeader.Size = UDim2.new(1, 0, 0, 18)
+		gameHeader.Position = UDim2.fromOffset(0, 2)
+		gameHeader.BackgroundTransparency = 1
+		gameHeader.Font = Enum.Font.GothamBold
+		gameHeader.Text = "Script for this game"
+		gameHeader.TextColor3 = COLORS.White
+		gameHeader.TextSize = 14
+		gameHeader.TextXAlignment = Enum.TextXAlignment.Left
+
+		local placeIdSub = Instance.new("TextLabel", gameHeaderWrap)
+		placeIdSub.Size = UDim2.new(1, 0, 0, 14)
+		placeIdSub.Position = UDim2.fromOffset(0, 20)
+		placeIdSub.BackgroundTransparency = 1
+		placeIdSub.Font = Enum.Font.Gotham
+		placeIdSub.Text = "Place ID: " .. tostring(game.PlaceId)
+		placeIdSub.TextColor3 = COLORS.TextMuted
+		placeIdSub.TextSize = 11
+		placeIdSub.TextXAlignment = Enum.TextXAlignment.Left
+
+		local gameContainer = Instance.new("Frame", scroll)
+		gameContainer.Name = "PlaceScriptContainer"
+		gameContainer.LayoutOrder = 4
+		gameContainer.Size = UDim2.new(1, 0, 0, 200)
+		gameContainer.ClipsDescendants = false
+		registerThemedSurface(gameContainer, UDim.new(0, 18), "Card")
+
+		TabPages["Scripts"] = pageWrap
+		return pageWrap
+	end
+
+	----------------------------------------------------------------------------
+	-- PAGE 2 & 3: PLAYER & PLAYERS (Kept completely empty - zero placeholder stuff!)
+	----------------------------------------------------------------------------
+	local function createEmptyPage(tabId)
+		local pageWrap = Instance.new("CanvasGroup")
+		pageWrap.Name = "Page_" .. tabId
+		pageWrap.Size = UDim2.fromScale(1, 1)
+		pageWrap.BackgroundTransparency = 1
+		pageWrap.BorderSizePixel = 0
+		pageWrap.Visible = false
+		pageWrap.Parent = pagesHolder
+
+		local pageScale = Instance.new("UIScale", pageWrap)
+		pageScale.Scale = 1
+
+		local scroll = Instance.new("ScrollingFrame")
+		scroll.Name = tabId .. "Scroll"
+		scroll.Size = UDim2.fromScale(1, 1)
+		scroll.BackgroundTransparency = 1
+		scroll.BorderSizePixel = 0
+		scroll.ScrollBarThickness = 2
+		scroll.ScrollBarImageColor3 = Color3.fromRGB(140, 150, 175)
+		scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+		scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		scroll.Parent = pageWrap
+
+		TabPages[tabId] = pageWrap
+		return pageWrap
+	end
+
+	----------------------------------------------------------------------------
+	-- PAGE 4: SETTINGS (iOS Scrollable List with real UI script settings only!)
+	----------------------------------------------------------------------------
+	local function createSettingsPage()
+		local pageWrap = Instance.new("CanvasGroup")
+		pageWrap.Name = "Page_Settings"
+		pageWrap.Size = UDim2.fromScale(1, 1)
+		pageWrap.BackgroundTransparency = 1
+		pageWrap.BorderSizePixel = 0
+		pageWrap.Visible = false
+		pageWrap.Parent = pagesHolder
+
+		local pageScale = Instance.new("UIScale", pageWrap)
+		pageScale.Scale = 1
+
+		local scroll = Instance.new("ScrollingFrame")
+		scroll.Name = "IosSettingsScroll"
+		scroll.Size = UDim2.fromScale(1, 1)
+		scroll.BackgroundTransparency = 1
+		scroll.BorderSizePixel = 0
+		scroll.ScrollBarThickness = 2
+		scroll.ScrollBarImageColor3 = Color3.fromRGB(140, 150, 175)
+		scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+		scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		scroll.Parent = pageWrap
+
+		local pad = Instance.new("UIPadding", scroll)
+		pad.PaddingTop = UDim.new(0, 2)
+		pad.PaddingBottom = UDim.new(0, 12)
+		pad.PaddingLeft = UDim.new(0, 2)
+		pad.PaddingRight = UDim.new(0, 4)
+
+		local listLayout = Instance.new("UIListLayout")
+		listLayout.FillDirection = Enum.FillDirection.Vertical
+		listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		listLayout.Padding = UDim.new(0, 12)
+		listLayout.Parent = scroll
+
+		local function createSettingsGroup(order, groupTitle, rowsSpec)
+			local wrap = Instance.new("Frame")
+			wrap.Name = "GroupWrap_" .. order
+			wrap.LayoutOrder = order
+			wrap.Size = UDim2.new(1, 0, 0, 22 + #rowsSpec * 46)
+			wrap.BackgroundTransparency = 1
+			wrap.Parent = scroll
+
+			local headerLbl = Instance.new("TextLabel", wrap)
+			headerLbl.Size = UDim2.new(1, -12, 0, 18)
+			headerLbl.Position = UDim2.fromOffset(6, 0)
+			headerLbl.BackgroundTransparency = 1
+			headerLbl.Font = Enum.Font.GothamBold
+			headerLbl.Text = string.upper(groupTitle)
+			headerLbl.TextColor3 = COLORS.TextMuted
+			headerLbl.TextSize = 11
+			headerLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+			local groupCard = Instance.new("Frame")
+			groupCard.Name = "IosSettingsGroup"
+			groupCard.Size = UDim2.new(1, 0, 0, #rowsSpec * 46)
+			groupCard.Position = UDim2.fromOffset(0, 22)
+			groupCard.ClipsDescendants = false
+			groupCard.Parent = wrap
+			registerThemedSurface(groupCard, UDim.new(0, 16), "Card")
+
+			for idx, spec in ipairs(rowsSpec) do
+				local rowBtn = Instance.new("TextButton")
+				rowBtn.Name = "Row_" .. spec.Title
+				rowBtn.Size = UDim2.new(1, 0, 0, 46)
+				rowBtn.Position = UDim2.fromOffset(0, (idx - 1) * 46)
+				rowBtn.BackgroundColor3 = COLORS.White
+				rowBtn.BackgroundTransparency = 1
+				rowBtn.BorderSizePixel = 0
+				rowBtn.Text = ""
+				rowBtn.AutoButtonColor = false
+				rowBtn.Parent = groupCard
+				Instance.new("UICorner", rowBtn).CornerRadius = UDim.new(0, 16)
+
+				local titleLbl = Instance.new("TextLabel", rowBtn)
+				titleLbl.Size = UDim2.new(1, -80, 1, 0)
+				titleLbl.Position = UDim2.fromOffset(16, 0)
+				titleLbl.BackgroundTransparency = 1
+				titleLbl.Font = Enum.Font.GothamMedium
+				titleLbl.Text = spec.Title
+				titleLbl.TextColor3 = COLORS.White
+				titleLbl.TextSize = 13
+				titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+				if idx < #rowsSpec then
+					local div = Instance.new("Frame", rowBtn)
+					div.Size = UDim2.new(1, -32, 0, 1)
+					div.Position = UDim2.new(0, 16, 1, -1)
+					div.BackgroundColor3 = COLORS.White
+					div.BackgroundTransparency = 0.90
+					div.BorderSizePixel = 0
+				end
+
+				if spec.Kind == "Toggle" then
+					local switchTrack = Instance.new("Frame", rowBtn)
+					switchTrack.Size = UDim2.fromOffset(44, 24)
+					switchTrack.AnchorPoint = Vector2.new(1, 0.5)
+					switchTrack.Position = UDim2.new(1, -14, 0.5, 0)
+					switchTrack.BackgroundColor3 = spec.Default and COLORS.SwitchOn or COLORS.SwitchOff
+					switchTrack.BorderSizePixel = 0
+					Instance.new("UICorner", switchTrack).CornerRadius = UDim.new(1, 0)
+
+					local knob = Instance.new("Frame", switchTrack)
+					knob.Size = UDim2.fromOffset(20, 20)
+					knob.AnchorPoint = Vector2.new(0, 0.5)
+					knob.Position = spec.Default and UDim2.new(1, -22, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
+					knob.BackgroundColor3 = COLORS.White
+					knob.BorderSizePixel = 0
+					Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+
+					local state = spec.Default or false
+					rowBtn.MouseButton1Down:Connect(function()
+						TweenService:Create(rowBtn, IOS_TIMING.PressDown, { BackgroundTransparency = 0.92 }):Play()
+						TweenService:Create(knob, IOS_TIMING.PressDown, { Size = UDim2.fromOffset(23, 20) }):Play()
+					end)
+					rowBtn.MouseLeave:Connect(function()
+						TweenService:Create(rowBtn, IOS_TIMING.PressDown, { BackgroundTransparency = 1 }):Play()
+						TweenService:Create(knob, IOS_TIMING.PressDown, { Size = UDim2.fromOffset(20, 20) }):Play()
+					end)
+					rowBtn.Activated:Connect(function()
+						state = not state
+						TweenService:Create(rowBtn, IOS_TIMING.SwitchToggle, { BackgroundTransparency = 1 }):Play()
+						TweenService:Create(switchTrack, IOS_TIMING.SwitchToggle, {
+							BackgroundColor3 = state and COLORS.SwitchOn or COLORS.SwitchOff,
+						}):Play()
+						TweenService:Create(knob, IOS_TIMING.SwitchToggle, {
+							Size = UDim2.fromOffset(20, 20),
+							Position = state and UDim2.new(1, -22, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
+						}):Play()
+						if spec.Callback then
+							spec.Callback(state)
+						end
+					end)
+				else
+					local chevWrap = Instance.new("Frame", rowBtn)
+					chevWrap.Size = UDim2.fromOffset(16, 16)
+					chevWrap.AnchorPoint = Vector2.new(1, 0.5)
+					chevWrap.Position = UDim2.new(1, -14, 0.5, 0)
+					chevWrap.BackgroundTransparency = 1
+					createVectorIcon(chevWrap, "ChevronRight", COLORS.TextMuted, 16)
+
+					rowBtn.MouseButton1Down:Connect(function()
+						TweenService:Create(rowBtn, IOS_TIMING.PressDown, { BackgroundTransparency = 0.90 }):Play()
+					end)
+					rowBtn.MouseLeave:Connect(function()
+						TweenService:Create(rowBtn, IOS_TIMING.PressDown, { BackgroundTransparency = 1 }):Play()
+					end)
+					rowBtn.Activated:Connect(function()
+						TweenService:Create(rowBtn, IOS_TIMING.SwitchToggle, { BackgroundTransparency = 1 }):Play()
+						if spec.Callback then
+							spec.Callback()
+						end
+					end)
+				end
+			end
+		end
+
+		-- Group 1: Appearance (Glass UI vs Normal UI, Background BlurEffect)
+		createSettingsGroup(1, "Appearance", {
+			{
+				Title = "Glass UI",
+				Kind = "Toggle",
+				Default = UISettings.GlassUI,
+				Callback = function(enabled)
+					UISettings.GlassUI = enabled
+					refreshTheme()
+				end,
+			},
+			{
+				Title = "Background Blur",
+				Kind = "Toggle",
+				Default = UISettings.BackgroundBlur,
+				Callback = function(enabled)
+					UISettings.BackgroundBlur = enabled
+					updateWorldBlur()
+				end,
+			},
+		})
+
+		-- Group 2: Notifications (Swipe to Dismiss, Compact Size)
+		createSettingsGroup(2, "Notifications", {
+			{
+				Title = "Swipe to Dismiss",
+				Kind = "Toggle",
+				Default = UISettings.SwipeToDismiss,
+				Callback = function(enabled)
+					UISettings.SwipeToDismiss = enabled
+				end,
+			},
+			{
+				Title = "Compact Notifications",
+				Kind = "Toggle",
+				Default = UISettings.CompactNotifications,
+				Callback = function(enabled)
+					UISettings.CompactNotifications = enabled
+				end,
+			},
+		})
+
+		-- Group 3: Window Controls
+		createSettingsGroup(3, "Window", {
+			{
+				Title = "Reset Menu Position",
+				Kind = "Action",
+				Callback = function()
+					TweenService:Create(MainWindowFrame, IOS_TIMING.PanelOpen, {
+						Position = REGULAR_WINDOW_POS,
+					}):Play()
+				end,
+			},
+			{
+				Title = "Minimize to Edge",
+				Kind = "Action",
+				Callback = function()
+					_G.SurfaceScript.SetHiddenToEdge(true)
+				end,
+			},
+		})
+
+		TabPages["Settings"] = pageWrap
+		return pageWrap
+	end
+
+	createScriptsPage()
+	createSettingsPage()
+	createEmptyPage("Player")
+	createEmptyPage("Players")
+
+	-- Switch active tab with smooth sliding highlight box & page transition animation
+	local function selectTab(tabId, headerTitle)
+		ActiveTabId = tabId
+		if HeaderTitleLabel then
+			HeaderTitleLabel.Text = string.upper(headerTitle or tabId)
+		end
+		if HeaderIconContainer then
+			HeaderIconContainer:ClearAllChildren()
+			createVectorIcon(HeaderIconContainer, tabId, COLORS.White, 20)
+		end
+
+		local targetBtn = TabButtons[tabId]
+		if targetBtn and SlidingActiveBox then
+			-- Active outline ALWAYS stays visible and slides to the active button
+			SlidingActiveBox.Visible = true
+			TweenService:Create(SlidingActiveBox, IOS_TIMING.TabSlide, {
+				Position = UDim2.new(0.5, 0, 0, targetBtn.YOffset),
+			}):Play()
+		end
+
+		for id, pageWrap in pairs(TabPages) do
+			if id == tabId then
+				pageWrap.Visible = true
+				pageWrap.GroupTransparency = 0.45
+				local pScale = pageWrap:FindFirstChildOfClass("UIScale")
+				if pScale then
+					pScale.Scale = 0.95
+					TweenService:Create(pScale, IOS_TIMING.PageTransition, { Scale = 1 }):Play()
+				end
+				TweenService:Create(pageWrap, IOS_TIMING.PageTransition, { GroupTransparency = 0 }):Play()
+			else
+				pageWrap.Visible = false
+			end
+		end
+	end
+
+	-- Sidebar Navigation Buttons: Scripts, Settings, Player, Players
+	local sidebarTabs = {
+		{ Id = "Scripts",  Title = "SCRIPTS" },
+		{ Id = "Settings", Title = "SETTINGS" },
+		{ Id = "Player",   Title = "PLAYER" },
+		{ Id = "Players",  Title = "PLAYERS" },
+	}
+
+	local slotHeight = 42
+	local slotGap = 6
+
+	for index, tab in ipairs(sidebarTabs) do
+		local yOffset = (index - 1) * (slotHeight + slotGap)
+		local slot = Instance.new("TextButton")
+		slot.Name = "Tab_" .. tab.Id
+		slot.Size = UDim2.fromOffset(42, slotHeight)
+		slot.AnchorPoint = Vector2.new(0.5, 0)
+		slot.Position = UDim2.new(0.5, 0, 0, yOffset)
+		slot.BackgroundTransparency = 1
+		slot.Text = ""
+		slot.AutoButtonColor = false
+		slot.ZIndex = 23
+		slot.Parent = navContainer
+
+		createVectorIcon(slot, tab.Id, COLORS.White, 22)
+		attachSpringPress(slot, 0.82, 1.08)
+
+		TabButtons[tab.Id] = {
+			Slot = slot,
+			YOffset = yOffset,
+		}
+
+		slot.Activated:Connect(function()
+			local winScaleObj = MainWindowFrame:FindFirstChildOfClass("UIScale")
+
+			if ActiveTabId == tab.Id then
+				-- Clicking the button you are ALREADY on toggles the menu closed/open,
+				-- while SlidingActiveBox (the outline on the dock button) NEVER disappears!
+				if WindowOpen then
+					WindowOpen = false
+					updateWorldBlur()
+					if winScaleObj then
+						TweenService:Create(winScaleObj, IOS_TIMING.PanelClose, { Scale = 0.88 }):Play()
+					end
+					task.delay(0.24, function()
+						if not WindowOpen then
+							MainWindowFrame.Visible = false
+						end
+					end)
+				else
+					WindowOpen = true
+					MainWindowFrame.Visible = true
+					-- Return menu back to regular spot when re-selected!
+					TweenService:Create(MainWindowFrame, IOS_TIMING.PanelOpen, {
+						Position = REGULAR_WINDOW_POS,
+					}):Play()
+					if winScaleObj then
+						TweenService:Create(winScaleObj, IOS_TIMING.PanelOpen, { Scale = 1 }):Play()
+					end
+					updateWorldBlur()
+				end
+			else
+				-- Selecting another button opens the menu (if closed), returns it to the regular spot, and switches tab
+				WindowOpen = true
+				MainWindowFrame.Visible = true
+				TweenService:Create(MainWindowFrame, IOS_TIMING.PanelOpen, {
+					Position = REGULAR_WINDOW_POS,
+				}):Play()
+				if winScaleObj then
+					TweenService:Create(winScaleObj, IOS_TIMING.PanelOpen, { Scale = 1 }):Play()
+				end
+				selectTab(tab.Id, tab.Title)
+				updateWorldBlur()
+			end
+		end)
+	end
+
+	-- Default to "Scripts" tab
+	selectTab("Scripts", "SCRIPTS")
+
+	hideDockBtn.Activated:Connect(function()
+		_G.SurfaceScript.SetHiddenToEdge(true)
+	end)
+	RestoreButton.Activated:Connect(function()
+		_G.SurfaceScript.SetHiddenToEdge(false)
+	end)
+end
+
+local function setPanelVisible(visible)
+	buildExecutorSuite()
+	SuiteVisible = visible
+	DockHiddenToEdge = false
+	WindowOpen = visible
+	local winScale = MainWindowFrame:FindFirstChildOfClass("UIScale")
+	updateWorldBlur()
+
+	if visible then
+		DockFrame.Visible = true
+		MainWindowFrame.Visible = true
+		TweenService:Create(DockFrame, IOS_TIMING.PanelOpen, {
+			Position = UDim2.new(1, -14, 0.5, 0),
+		}):Play()
+		TweenService:Create(MainWindowFrame, IOS_TIMING.PanelOpen, {
+			Position = REGULAR_WINDOW_POS,
+		}):Play()
+		if winScale then
+			TweenService:Create(winScale, IOS_TIMING.PanelOpen, { Scale = 1 }):Play()
+		end
+		TweenService:Create(RestoreButton, IOS_TIMING.PanelClose, {
+			Position = UDim2.new(1, 60, 0.5, 0),
+		}):Play()
+	else
+		TweenService:Create(DockFrame, IOS_TIMING.PanelClose, {
+			Position = UDim2.new(1, 90, 0.5, 0),
+		}):Play()
+		if winScale then
+			TweenService:Create(winScale, IOS_TIMING.PanelClose, { Scale = 0.88 }):Play()
+		end
+		TweenService:Create(RestoreButton, IOS_TIMING.PanelClose, {
+			Position = UDim2.new(1, 60, 0.5, 0),
+		}):Play()
+		task.delay(0.28, function()
+			if not SuiteVisible then
+				MainWindowFrame.Visible = false
+			end
+		end)
+	end
+end
+
+local function setHiddenToEdge(hidden)
+	buildExecutorSuite()
+	DockHiddenToEdge = hidden
+	local winScale = MainWindowFrame:FindFirstChildOfClass("UIScale")
+	updateWorldBlur()
+
+	if hidden then
+		TweenService:Create(DockFrame, IOS_TIMING.PanelClose, {
+			Position = UDim2.new(1, 90, 0.5, 0),
+		}):Play()
+		if winScale then
+			TweenService:Create(winScale, IOS_TIMING.PanelClose, { Scale = 0.88 }):Play()
+		end
+		task.delay(0.25, function()
+			if DockHiddenToEdge then
+				MainWindowFrame.Visible = false
+			end
+		end)
+		TweenService:Create(RestoreButton, IOS_TIMING.PanelOpen, {
+			Position = UDim2.new(1, -12, 0.5, 0),
+		}):Play()
+	else
+		SuiteVisible = true
+		TweenService:Create(RestoreButton, IOS_TIMING.PanelClose, {
+			Position = UDim2.new(1, 60, 0.5, 0),
+		}):Play()
+		TweenService:Create(DockFrame, IOS_TIMING.PanelOpen, {
+			Position = UDim2.new(1, -14, 0.5, 0),
+		}):Play()
+		if WindowOpen then
+			MainWindowFrame.Visible = true
+			TweenService:Create(MainWindowFrame, IOS_TIMING.PanelOpen, {
+				Position = REGULAR_WINDOW_POS,
+			}):Play()
+			if winScale then
+				TweenService:Create(winScale, IOS_TIMING.PanelOpen, { Scale = 1 }):Play()
+			end
+		end
+	end
+end
+
+local SurfaceScriptAPI = {
+	SessionExecuted = false,
+	Settings = UISettings,
+	Notify = createNotification,
+	SetPanelVisible = setPanelVisible,
+	SetHiddenToEdge = setHiddenToEdge,
+	TogglePanel = function()
+		if DockHiddenToEdge then
+			setHiddenToEdge(false)
+		else
+			setPanelVisible(not SuiteVisible)
+		end
+	end,
+}
+
+function SurfaceScriptAPI.ExecuteSession(forceFirstTime)
+	if forceFirstTime then
+		SurfaceScriptAPI.SessionExecuted = false
+		setPanelVisible(false)
+	end
+
+	if not SurfaceScriptAPI.SessionExecuted then
+		createNotification({
+			Title = "Confirm action?",
+			Subtitle = "Execute game script",
+			Type = "Confirm",
+			OnConfirm = function()
+				SurfaceScriptAPI.SessionExecuted = true
+				setPanelVisible(true)
+			end,
+			OnCancel = function()
+			end,
+		})
+	else
+		setPanelVisible(true)
+		createNotification({
+			Title = "Surface Script",
+			Subtitle = "Want to load everything?",
+			Type = "Regular",
+		})
+	end
+end
+
+_G.SurfaceScript = SurfaceScriptAPI
+shared.SurfaceScript = SurfaceScriptAPI
+pcall(function()
+	if type(getgenv) == "function" then
+		getgenv().SurfaceScript = SurfaceScriptAPI
+	end
+end)
+
+task.delay(0.4, function()
+	SurfaceScriptAPI.ExecuteSession(true)
+end)
