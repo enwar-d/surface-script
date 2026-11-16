@@ -132,17 +132,17 @@ function PlayerPage.Rebuild()
 				State.FlySpeed = val
 			end,
 		},
-	}
-
-	if adv then
-		table.insert(flightRows, {
+		{
 			Title = "CFrame Fly (CFly)",
 			Kind = "Toggle",
 			Default = State.CFrameFly,
 			Callback = function(enabled)
 				PlayerCommands.SetCFrameFly(enabled)
 			end,
-		})
+		},
+	}
+
+	if adv then
 		table.insert(flightRows, {
 			Title = "Float Platform (Q / E)",
 			Kind = "Toggle",
@@ -247,6 +247,14 @@ function PlayerPage.Rebuild()
 		})
 	end
 
+	table.insert(charRows, {
+		Title = "Jerk Tool",
+		Kind = "Button",
+		ButtonText = "Give",
+		Callback = function()
+			PlayerCommands.GiveJerkTool()
+		end,
+	})
 	table.insert(charRows, {
 		Title = "Respawn / Reset",
 		Kind = "Button",

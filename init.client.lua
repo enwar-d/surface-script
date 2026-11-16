@@ -239,6 +239,20 @@ local function buildExecutorSuite()
 	Icons.CreateSvgLogo(RestoreButton, 26, UDim2.fromScale(0.5, 0.5), Vector2.new(0.5, 0.5), 26)
 	Theme.AttachSpringPress(RestoreButton, 0.86, 1.06)
 
+	local function applyWindowSize(animate)
+		if not MainWindowFrame then return end
+		local targetHeight = 430
+		if Config.UISettings.SmallerWindow and DockFrame then
+			targetHeight = DockFrame.Size.Y.Offset
+		end
+		local targetSize = UDim2.fromOffset(340, targetHeight)
+		if animate then
+			TweenService:Create(MainWindowFrame, IOS_TIMING.PanelOpen, { Size = targetSize }):Play()
+		else
+			MainWindowFrame.Size = targetSize
+		end
+	end
+
 	MainWindowFrame = Instance.new("Frame")
 	MainWindowFrame.Name = "MainContentWindow"
 	MainWindowFrame.Size = UDim2.fromOffset(340, 430)
@@ -248,6 +262,7 @@ local function buildExecutorSuite()
 	MainWindowFrame.ZIndex = 18
 	MainWindowFrame.Parent = ScreenGui
 	Theme.RegisterSurface(MainWindowFrame, UDim.new(0, 24), "Window")
+	applyWindowSize(false)
 
 	local winScale = Instance.new("UIScale")
 	winScale.Scale = 0.92
@@ -352,7 +367,8 @@ local function buildExecutorSuite()
 		end,
 		function()
 			unloadSession(false)
-		end
+		end,
+		applyWindowSize
 	)
 
 	local function selectTab(tabId, headerTitle)

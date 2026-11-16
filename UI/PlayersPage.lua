@@ -1,6 +1,8 @@
 --[[
 	UI/PlayersPage.lua
-	Players Tab: Selected Player Banner + Basic/Advanced Infinite Yield Target Actions + Live Server Player List
+	Players Tab:
+	  1. Player selector dropdown at the top (tap to open, search inside, tap a player to select)
+	  2. Target actions below (Basic / Advanced Infinite Yield commands)
 ]]
 
 local Players = game:GetService("Players")
@@ -21,9 +23,36 @@ local IOS_TIMING = Config.IOS_TIMING
 local UISettings = Config.UISettings
 local State = TargetCommands.State
 
+local LocalPlayer = Players.LocalPlayer
+
 local PlayersPage = {}
 
 local RebuildTargetGroupsFn = nil
+
+-- Dropdown sizing
+local HEADER_H = 60
+local SEARCH_H = 34
+local ROW_H = 44
+local MAX_VISIBLE_ROWS = 5
+local DROPDOWN_TWEEN = TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+
+local ThumbCache = {}
+
+local function getThumb(userId, callback)
+	if ThumbCache[userId] then
+		callback(ThumbCache[userId])
+		return
+	end
+	task.spawn(function()
+		local ok, thumb = pcall(function()
+			return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+		end)
+		if ok and thumb then
+			ThumbCache[userId] = thumb
+			callback(thumb)
+		end
+	end)
+end
 
 function PlayersPage.Rebuild()
 	if RebuildTargetGroupsFn then
@@ -65,57 +94,212 @@ function PlayersPage.Build(pagesHolder)
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	listLayout.Padding = UDim.new(0, 10)
 
-	local PlayerCardSelectButtons = {}
-
-	-- Top Section: Selected Player Profile Banner
+	----------------------------------------------------------------------------
+	-- 1. PLAYER SELECTOR DROPDOWN
+	----------------------------------------------------------------------------
 	local topHeaderLbl = Instance.new("TextLabel", scroll)
 	topHeaderLbl.LayoutOrder = 1
-	topHeaderLbl.Size = UDim2.new(1, -12, 0, 16)
+	topHeaderLbl.Size = UDim2.new(1, -12, 0, 14)
 	topHeaderLbl.BackgroundTransparency = 1
 	topHeaderLbl.Font = Enum.Font.GothamBold
-	topHeaderLbl.Text = "SELECTED PLAYER"
+	topHeaderLbl.Text = "  TARGET PLAYER"
 	topHeaderLbl.TextColor3 = COLORS.TextMuted
 	topHeaderLbl.TextSize = 11
 	topHeaderLbl.TextXAlignment = Enum.TextXAlignment.Left
 
-	local selectedBanner = Instance.new("Frame", scroll)
-	selectedBanner.Name = "SelectedPlayerBanner"
-	selectedBanner.LayoutOrder = 2
-	selectedBanner.Size = UDim2.new(1, 0, 0, 56)
-	selectedBanner.ClipsDescendants = false
-	Theme.RegisterSurface(selectedBanner, UDim.new(0, 16), "Card")
+	local dropdown = Instance.new("Frame", scroll)
+	dropdown.Name = "PlayerDropdown"
+	dropdown.LayoutOrder = 2
+	dropdown.Size = UDim2.new(1, 0, 0, HEADER_H)
+	dropdown.ClipsDescendants = true
+	Theme.RegisterSurface(dropdown, UDim.new(0, 16), "Card")
 
-	local selAvatar = Instance.new("ImageLabel", selectedBanner)
+	local dropdownOpen = false
+
+	-- Header (always visible, tap to open/close)
+	local header = Instance.new("TextButton", dropdown)
+	header.Name = "DropdownHeader"
+	header.Size = UDim2.new(1, 0, 0, HEADER_H)
+	header.BackgroundTransparency = 1
+	header.Text = ""
+	header.AutoButtonColor = false
+	header.ZIndex = 2
+
+	local selAvatar = Instance.new("ImageLabel", header)
 	selAvatar.Size = UDim2.fromOffset(38, 38)
 	selAvatar.AnchorPoint = Vector2.new(0, 0.5)
 	selAvatar.Position = UDim2.new(0, 12, 0.5, 0)
 	selAvatar.BackgroundColor3 = Color3.fromRGB(45, 52, 68)
+	selAvatar.BackgroundTransparency = 0.3
 	selAvatar.BorderSizePixel = 0
+	selAvatar.ZIndex = 2
 	Instance.new("UICorner", selAvatar).CornerRadius = UDim.new(1, 0)
+	local avatarRing = Instance.new("UIStroke", selAvatar)
+	avatarRing.Color = COLORS.White
+	avatarRing.Transparency = 0.6
+	avatarRing.Thickness = 1.2
 
-	local selDisplayName = Instance.new("TextLabel", selectedBanner)
-	selDisplayName.Size = UDim2.new(1, -70, 0, 18)
-	selDisplayName.Position = UDim2.fromOffset(60, 10)
+	local selDisplayName = Instance.new("TextLabel", header)
+	selDisplayName.Size = UDim2.new(1, -150, 0, 18)
+	selDisplayName.Position = UDim2.fromOffset(60, 12)
 	selDisplayName.BackgroundTransparency = 1
 	selDisplayName.Font = Enum.Font.GothamBold
-	selDisplayName.Text = "No Player Selected"
+	selDisplayName.Text = "Select a player"
 	selDisplayName.TextColor3 = COLORS.White
 	selDisplayName.TextSize = 13
 	selDisplayName.TextXAlignment = Enum.TextXAlignment.Left
 	selDisplayName.TextTruncate = Enum.TextTruncate.AtEnd
+	selDisplayName.ZIndex = 2
 
-	local selUsername = Instance.new("TextLabel", selectedBanner)
-	selUsername.Size = UDim2.new(1, -70, 0, 15)
-	selUsername.Position = UDim2.fromOffset(60, 28)
+	local selUsername = Instance.new("TextLabel", header)
+	selUsername.Size = UDim2.new(1, -150, 0, 15)
+	selUsername.Position = UDim2.fromOffset(60, 31)
 	selUsername.BackgroundTransparency = 1
 	selUsername.Font = Enum.Font.Gotham
-	selUsername.Text = "Select a player from the list below"
+	selUsername.Text = "Tap to choose a target"
 	selUsername.TextColor3 = COLORS.TextMuted
 	selUsername.TextSize = 11
 	selUsername.TextXAlignment = Enum.TextXAlignment.Left
 	selUsername.TextTruncate = Enum.TextTruncate.AtEnd
+	selUsername.ZIndex = 2
 
-	-- Container for Target Action Groups (rebuilt when Advanced Mode toggles)
+	local countPill = Instance.new("TextLabel", header)
+	countPill.Size = UDim2.fromOffset(0, 22)
+	countPill.AutomaticSize = Enum.AutomaticSize.X
+	countPill.AnchorPoint = Vector2.new(1, 0.5)
+	countPill.Position = UDim2.new(1, -40, 0.5, 0)
+	countPill.BackgroundColor3 = COLORS.White
+	countPill.BackgroundTransparency = 0.88
+	countPill.Font = Enum.Font.GothamBold
+	countPill.Text = "0"
+	countPill.TextColor3 = COLORS.SubText
+	countPill.TextSize = 11
+	countPill.ZIndex = 2
+	Instance.new("UICorner", countPill).CornerRadius = UDim.new(1, 0)
+	local countPad = Instance.new("UIPadding", countPill)
+	countPad.PaddingLeft = UDim.new(0, 9)
+	countPad.PaddingRight = UDim.new(0, 9)
+
+	local chevWrap = Instance.new("Frame", header)
+	chevWrap.Size = UDim2.fromOffset(18, 18)
+	chevWrap.AnchorPoint = Vector2.new(1, 0.5)
+	chevWrap.Position = UDim2.new(1, -14, 0.5, 0)
+	chevWrap.BackgroundTransparency = 1
+	chevWrap.ZIndex = 2
+	local chevron = Icons.CreateVectorIcon(chevWrap, "ChevronRight", COLORS.IconLight, 16)
+	chevron.Rotation = 90 -- points down when closed
+
+	-- Body (search + list), revealed when the dropdown expands
+	local body = Instance.new("Frame", dropdown)
+	body.Name = "DropdownBody"
+	body.Size = UDim2.new(1, 0, 0, 0)
+	body.AutomaticSize = Enum.AutomaticSize.Y
+	body.Position = UDim2.fromOffset(0, HEADER_H)
+	body.BackgroundTransparency = 1
+	body.ZIndex = 2
+
+	local bodyDivider = Instance.new("Frame", body)
+	bodyDivider.Size = UDim2.new(1, -24, 0, 1)
+	bodyDivider.Position = UDim2.fromOffset(12, 0)
+	bodyDivider.BackgroundColor3 = COLORS.White
+	bodyDivider.BackgroundTransparency = 0.88
+	bodyDivider.BorderSizePixel = 0
+	bodyDivider.ZIndex = 2
+
+	local searchBar = Instance.new("Frame", body)
+	searchBar.Name = "PlayerSearchBar"
+	searchBar.Size = UDim2.new(1, -24, 0, SEARCH_H)
+	searchBar.Position = UDim2.fromOffset(12, 9)
+	searchBar.BackgroundColor3 = COLORS.White
+	searchBar.BackgroundTransparency = 0.9
+	searchBar.BorderSizePixel = 0
+	searchBar.ZIndex = 2
+	Instance.new("UICorner", searchBar).CornerRadius = UDim.new(0, 10)
+	local searchStroke = Instance.new("UIStroke", searchBar)
+	searchStroke.Color = COLORS.White
+	searchStroke.Transparency = 0.82
+	searchStroke.Thickness = 1
+
+	local searchIconWrap = Instance.new("Frame", searchBar)
+	searchIconWrap.Size = UDim2.fromOffset(16, 16)
+	searchIconWrap.AnchorPoint = Vector2.new(0, 0.5)
+	searchIconWrap.Position = UDim2.new(0, 10, 0.5, 0)
+	searchIconWrap.BackgroundTransparency = 1
+	searchIconWrap.ZIndex = 2
+	Icons.CreateVectorIcon(searchIconWrap, "Search", COLORS.TextMuted, 15)
+
+	local searchBox = Instance.new("TextBox", searchBar)
+	searchBox.Size = UDim2.new(1, -40, 1, 0)
+	searchBox.Position = UDim2.fromOffset(32, 0)
+	searchBox.BackgroundTransparency = 1
+	searchBox.Font = Enum.Font.Gotham
+	searchBox.PlaceholderText = "Search players..."
+	searchBox.Text = ""
+	searchBox.TextColor3 = COLORS.White
+	searchBox.PlaceholderColor3 = COLORS.TextMuted
+	searchBox.TextSize = 12
+	searchBox.TextXAlignment = Enum.TextXAlignment.Left
+	searchBox.ClearTextOnFocus = false
+	searchBox.ZIndex = 2
+
+	searchBox.Focused:Connect(function()
+		TweenService:Create(searchStroke, IOS_TIMING.PressDown, { Transparency = 0.45 }):Play()
+	end)
+	searchBox.FocusLost:Connect(function()
+		TweenService:Create(searchStroke, IOS_TIMING.SwitchToggle, { Transparency = 0.82 }):Play()
+	end)
+
+	local playerList = Instance.new("ScrollingFrame", body)
+	playerList.Name = "PlayerList"
+	playerList.Size = UDim2.new(1, -24, 0, ROW_H)
+	playerList.Position = UDim2.fromOffset(12, 9 + SEARCH_H + 6)
+	playerList.BackgroundTransparency = 1
+	playerList.BorderSizePixel = 0
+	playerList.ScrollBarThickness = 2
+	playerList.ScrollBarImageColor3 = Color3.fromRGB(170, 180, 205)
+	playerList.CanvasSize = UDim2.new(0, 0, 0, 0)
+	playerList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	playerList.ScrollingDirection = Enum.ScrollingDirection.Y
+	playerList.ZIndex = 2
+
+	local playerListLayout = Instance.new("UIListLayout", playerList)
+	playerListLayout.FillDirection = Enum.FillDirection.Vertical
+	playerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+	local currentListHeight = ROW_H
+
+	local function openHeight()
+		return HEADER_H + 9 + SEARCH_H + 6 + currentListHeight + 8
+	end
+
+	local function setDropdownOpen(open)
+		dropdownOpen = open
+		TweenService:Create(dropdown, DROPDOWN_TWEEN, {
+			Size = UDim2.new(1, 0, 0, open and openHeight() or HEADER_H),
+		}):Play()
+		TweenService:Create(chevron, DROPDOWN_TWEEN, { Rotation = open and 270 or 90 }):Play()
+		if not open and searchBox:IsFocused() then
+			searchBox:ReleaseFocus()
+		end
+	end
+
+	header.Activated:Connect(function()
+		setDropdownOpen(not dropdownOpen)
+	end)
+	header.MouseButton1Down:Connect(function()
+		TweenService:Create(header, IOS_TIMING.PressDown, { BackgroundTransparency = 0.94 }):Play()
+	end)
+	header.MouseButton1Up:Connect(function()
+		TweenService:Create(header, IOS_TIMING.SwitchToggle, { BackgroundTransparency = 1 }):Play()
+	end)
+	header.MouseLeave:Connect(function()
+		TweenService:Create(header, IOS_TIMING.SwitchToggle, { BackgroundTransparency = 1 }):Play()
+	end)
+	header.BackgroundColor3 = COLORS.White
+
+	----------------------------------------------------------------------------
+	-- 2. TARGET ACTIONS (rebuilt when Advanced Mode toggles)
+	----------------------------------------------------------------------------
 	local targetActionsContainer = Instance.new("Frame", scroll)
 	targetActionsContainer.Name = "TargetActionsContainer"
 	targetActionsContainer.LayoutOrder = 3
@@ -195,8 +379,38 @@ function PlayersPage.Build(pagesHolder)
 		)
 		table.insert(activeControllerTables, ctrl1)
 
+		-- Fun Time Friday section (mutually exclusive toggles)
+		local funCtrl = nil
+		local funSpecs = {
+			{ Title = "🎯 Bang V2", Mode = "BangV2" },
+			{ Title = "🎉 Get Banged", Mode = "GetBanged" },
+			{ Title = "💥 Suck", Mode = "Suck" },
+			{ Title = "🔥 Get Suc", Mode = "GetSuc" },
+		}
+		local funRows = {}
+		for _, fs in ipairs(funSpecs) do
+			table.insert(funRows, {
+				Title = fs.Title,
+				Kind = "Toggle",
+				Default = State[fs.Mode],
+				Callback = function(enabled)
+					TargetCommands.SetFunMode(fs.Mode, enabled)
+					if funCtrl then
+						for _, other in ipairs(funSpecs) do
+							if funCtrl[other.Title] then
+								funCtrl[other.Title].SetState(State[other.Mode], true)
+							end
+						end
+					end
+				end,
+			})
+		end
+		local _, ctrlFun = Components.CreateIosGroup(targetActionsContainer, 2, "Fun Time Friday", funRows)
+		funCtrl = ctrlFun
+		table.insert(activeControllerTables, ctrlFun)
+
 		if adv then
-			local _, ctrl2 = Components.CreateIosGroup(targetActionsContainer, 2, "Target Actions (Infinite Yield)", {
+			local _, ctrl2 = Components.CreateIosGroup(targetActionsContainer, 3, "Target Actions (Infinite Yield)", {
 				{
 					Title = "Loop Goto / Follow",
 					Kind = "Toggle",
@@ -276,199 +490,207 @@ function PlayersPage.Build(pagesHolder)
 
 	RebuildTargetGroupsFn()
 
+	----------------------------------------------------------------------------
+	-- SELECTION + LIST BUILDING
+	----------------------------------------------------------------------------
+	local rebuildPlayerList -- forward declaration
+
 	local function selectPlayer(plr)
 		TargetCommands.SetSelectedPlayer(plr)
 		if plr then
-			selDisplayName.Text = plr.DisplayName
+			selDisplayName.Text = plr.DisplayName .. (plr == LocalPlayer and "  (You)" or "")
 			selUsername.Text = "@" .. plr.Name
-			task.spawn(function()
-				local ok, thumb = pcall(function()
-					return Players:GetUserThumbnailAsync(
-						plr.UserId,
-						Enum.ThumbnailType.HeadShot,
-						Enum.ThumbnailSize.Size100x100
-					)
-				end)
-				if ok and thumb and TargetCommands.SelectedPlayer == plr then
+			selAvatar.Image = ThumbCache[plr.UserId] or ""
+			getThumb(plr.UserId, function(thumb)
+				if TargetCommands.SelectedPlayer == plr then
 					selAvatar.Image = thumb
 				end
 			end)
 		else
-			selDisplayName.Text = "No Player Selected"
-			selUsername.Text = "Select a player from the list below"
+			selDisplayName.Text = "Select a player"
+			selUsername.Text = "Tap to choose a target"
 			selAvatar.Image = ""
-		end
-
-		for p, btnData in pairs(PlayerCardSelectButtons) do
-			if btnData.Button and btnData.Button.Parent then
-				local isSel = (p == TargetCommands.SelectedPlayer)
-				btnData.Button.Text = isSel and "Selected" or "Select"
-				TweenService:Create(btnData.Button, IOS_TIMING.SwitchToggle, {
-					BackgroundColor3 = isSel and COLORS.SwitchOn or COLORS.ButtonPill,
-				}):Play()
-			end
 		end
 	end
 
-	-- Bottom Section: Players in Server Header & Search
-	local listHeaderLbl = Instance.new("TextLabel", scroll)
-	listHeaderLbl.LayoutOrder = 5
-	listHeaderLbl.Size = UDim2.new(1, -12, 0, 18)
-	listHeaderLbl.BackgroundTransparency = 1
-	listHeaderLbl.Font = Enum.Font.GothamBold
-	listHeaderLbl.Text = "PLAYERS IN SERVER"
-	listHeaderLbl.TextColor3 = COLORS.TextMuted
-	listHeaderLbl.TextSize = 11
-	listHeaderLbl.TextXAlignment = Enum.TextXAlignment.Left
+	local function makePlayerRow(plr, order, isLast)
+		local isSel = (plr == TargetCommands.SelectedPlayer)
 
-	local searchBar = Instance.new("Frame", scroll)
-	searchBar.Name = "PlayerSearchBar"
-	searchBar.LayoutOrder = 6
-	searchBar.Size = UDim2.new(1, 0, 0, 38)
-	searchBar.ClipsDescendants = false
-	Theme.RegisterSurface(searchBar, UDim.new(0, 12), "Card")
+		local row = Instance.new("TextButton")
+		row.Name = "PlayerRow_" .. plr.Name
+		row.LayoutOrder = order
+		row.Size = UDim2.new(1, 0, 0, ROW_H)
+		row.BackgroundColor3 = COLORS.White
+		row.BackgroundTransparency = isSel and 0.88 or 1
+		row.BorderSizePixel = 0
+		row.Text = ""
+		row.AutoButtonColor = false
+		row.ZIndex = 2
+		Instance.new("UICorner", row).CornerRadius = UDim.new(0, 11)
 
-	local searchIconWrap = Instance.new("Frame", searchBar)
-	searchIconWrap.Size = UDim2.fromOffset(18, 18)
-	searchIconWrap.AnchorPoint = Vector2.new(0, 0.5)
-	searchIconWrap.Position = UDim2.new(0, 12, 0.5, 0)
-	searchIconWrap.BackgroundTransparency = 1
-	Icons.CreateVectorIcon(searchIconWrap, "Search", COLORS.TextMuted, 16)
+		local avatar = Instance.new("ImageLabel", row)
+		avatar.Size = UDim2.fromOffset(30, 30)
+		avatar.AnchorPoint = Vector2.new(0, 0.5)
+		avatar.Position = UDim2.new(0, 8, 0.5, 0)
+		avatar.BackgroundColor3 = Color3.fromRGB(45, 52, 68)
+		avatar.BackgroundTransparency = 0.3
+		avatar.BorderSizePixel = 0
+		avatar.Image = ThumbCache[plr.UserId] or ""
+		avatar.ZIndex = 2
+		Instance.new("UICorner", avatar).CornerRadius = UDim.new(1, 0)
+		getThumb(plr.UserId, function(thumb)
+			if avatar.Parent then
+				avatar.Image = thumb
+			end
+		end)
 
-	local searchBox = Instance.new("TextBox", searchBar)
-	searchBox.Size = UDim2.new(1, -44, 1, 0)
-	searchBox.Position = UDim2.fromOffset(36, 0)
-	searchBox.BackgroundTransparency = 1
-	searchBox.Font = Enum.Font.Gotham
-	searchBox.PlaceholderText = "Search player..."
-	searchBox.Text = ""
-	searchBox.TextColor3 = COLORS.White
-	searchBox.PlaceholderColor3 = COLORS.TextMuted
-	searchBox.TextSize = 12
-	searchBox.TextXAlignment = Enum.TextXAlignment.Left
-	searchBox.ClearTextOnFocus = false
+		local dispLbl = Instance.new("TextLabel", row)
+		dispLbl.Size = UDim2.new(1, -110, 0, 16)
+		dispLbl.Position = UDim2.fromOffset(46, 6)
+		dispLbl.BackgroundTransparency = 1
+		dispLbl.Font = Enum.Font.GothamBold
+		dispLbl.Text = plr.DisplayName .. (plr == LocalPlayer and "  (You)" or "")
+		dispLbl.TextColor3 = COLORS.White
+		dispLbl.TextSize = 12
+		dispLbl.TextXAlignment = Enum.TextXAlignment.Left
+		dispLbl.TextTruncate = Enum.TextTruncate.AtEnd
+		dispLbl.ZIndex = 2
 
-	local playersListHolder = Instance.new("Frame", scroll)
-	playersListHolder.Name = "PlayersListHolder"
-	playersListHolder.LayoutOrder = 7
-	playersListHolder.Size = UDim2.new(1, 0, 0, 0)
-	playersListHolder.AutomaticSize = Enum.AutomaticSize.Y
-	playersListHolder.BackgroundTransparency = 1
+		local userLbl = Instance.new("TextLabel", row)
+		userLbl.Size = UDim2.new(1, -110, 0, 14)
+		userLbl.Position = UDim2.fromOffset(46, 22)
+		userLbl.BackgroundTransparency = 1
+		userLbl.Font = Enum.Font.Gotham
+		userLbl.Text = "@" .. plr.Name
+		userLbl.TextColor3 = COLORS.TextMuted
+		userLbl.TextSize = 10
+		userLbl.TextXAlignment = Enum.TextXAlignment.Left
+		userLbl.TextTruncate = Enum.TextTruncate.AtEnd
+		userLbl.ZIndex = 2
 
-	local playersListLayout = Instance.new("UIListLayout", playersListHolder)
-	playersListLayout.FillDirection = Enum.FillDirection.Vertical
-	playersListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	playersListLayout.Padding = UDim.new(0, 8)
+		if isSel then
+			local selDot = Instance.new("Frame", row)
+			selDot.Size = UDim2.fromOffset(8, 8)
+			selDot.AnchorPoint = Vector2.new(1, 0.5)
+			selDot.Position = UDim2.new(1, -14, 0.5, 0)
+			selDot.BackgroundColor3 = COLORS.SwitchOn
+			selDot.BorderSizePixel = 0
+			selDot.ZIndex = 2
+			Instance.new("UICorner", selDot).CornerRadius = UDim.new(1, 0)
+			local glow = Instance.new("UIStroke", selDot)
+			glow.Color = COLORS.SwitchOn
+			glow.Thickness = 3
+			glow.Transparency = 0.7
+		end
 
-	local function rebuildPlayerCards()
-		PlayerCardSelectButtons = {}
-		for _, child in ipairs(playersListHolder:GetChildren()) do
+		if not isLast then
+			local div = Instance.new("Frame", row)
+			div.Size = UDim2.new(1, -54, 0, 1)
+			div.Position = UDim2.new(0, 46, 1, -1)
+			div.BackgroundColor3 = COLORS.White
+			div.BackgroundTransparency = 0.92
+			div.BorderSizePixel = 0
+			div.ZIndex = 2
+		end
+
+		row.MouseEnter:Connect(function()
+			if plr ~= TargetCommands.SelectedPlayer then
+				TweenService:Create(row, IOS_TIMING.PressDown, { BackgroundTransparency = 0.94 }):Play()
+			end
+		end)
+		row.MouseLeave:Connect(function()
+			if plr ~= TargetCommands.SelectedPlayer then
+				TweenService:Create(row, IOS_TIMING.PressDown, { BackgroundTransparency = 1 }):Play()
+			end
+		end)
+		row.Activated:Connect(function()
+			selectPlayer(plr)
+			rebuildPlayerList()
+			setDropdownOpen(false)
+		end)
+
+		row.Parent = playerList
+		return row
+	end
+
+	rebuildPlayerList = function()
+		for _, child in ipairs(playerList:GetChildren()) do
 			if child:IsA("GuiObject") then
 				child:Destroy()
 			end
 		end
 
-		local query = string.lower(searchBox.Text or "")
 		local allPlayers = Players:GetPlayers()
+		countPill.Text = tostring(#allPlayers) .. (#allPlayers == 1 and " player" or " players")
 
+		-- Auto-select: prefer someone other than yourself
 		if not TargetCommands.SelectedPlayer or not TargetCommands.SelectedPlayer.Parent then
-			if allPlayers[1] then
-				selectPlayer(allPlayers[1])
+			local pick = nil
+			for _, p in ipairs(allPlayers) do
+				if p ~= LocalPlayer then
+					pick = p
+					break
+				end
+			end
+			pick = pick or allPlayers[1]
+			if pick then
+				selectPlayer(pick)
 			end
 		end
 
-		for idx, plr in ipairs(allPlayers) do
-			local matchName = string.find(string.lower(plr.Name), query, 1, true)
-				or string.find(string.lower(plr.DisplayName), query, 1, true)
-
-			if query == "" or matchName then
-				local pCard = Instance.new("Frame", playersListHolder)
-				pCard.Name = "PlayerCard_" .. plr.Name
-				pCard.LayoutOrder = idx
-				pCard.Size = UDim2.new(1, 0, 0, 52)
-				pCard.ClipsDescendants = false
-				Theme.RegisterSurface(pCard, UDim.new(0, 14), "Card")
-
-				local avatar = Instance.new("ImageLabel", pCard)
-				avatar.Size = UDim2.fromOffset(36, 36)
-				avatar.AnchorPoint = Vector2.new(0, 0.5)
-				avatar.Position = UDim2.new(0, 10, 0.5, 0)
-				avatar.BackgroundColor3 = Color3.fromRGB(45, 52, 68)
-				avatar.BorderSizePixel = 0
-				Instance.new("UICorner", avatar).CornerRadius = UDim.new(1, 0)
-
-				task.spawn(function()
-					local ok, thumb = pcall(function()
-						return Players:GetUserThumbnailAsync(
-							plr.UserId,
-							Enum.ThumbnailType.HeadShot,
-							Enum.ThumbnailSize.Size100x100
-						)
-					end)
-					if ok and thumb and avatar.Parent then
-						avatar.Image = thumb
-					end
-				end)
-
-				local dispLbl = Instance.new("TextLabel", pCard)
-				dispLbl.Size = UDim2.new(1, -142, 0, 17)
-				dispLbl.Position = UDim2.fromOffset(54, 9)
-				dispLbl.BackgroundTransparency = 1
-				dispLbl.Font = Enum.Font.GothamBold
-				dispLbl.Text = plr.DisplayName
-				dispLbl.TextColor3 = COLORS.White
-				dispLbl.TextSize = 13
-				dispLbl.TextXAlignment = Enum.TextXAlignment.Left
-				dispLbl.TextTruncate = Enum.TextTruncate.AtEnd
-
-				local userLbl = Instance.new("TextLabel", pCard)
-				userLbl.Size = UDim2.new(1, -142, 0, 15)
-				userLbl.Position = UDim2.fromOffset(54, 26)
-				userLbl.BackgroundTransparency = 1
-				userLbl.Font = Enum.Font.Gotham
-				userLbl.Text = "@" .. plr.Name
-				userLbl.TextColor3 = COLORS.TextMuted
-				userLbl.TextSize = 11
-				userLbl.TextXAlignment = Enum.TextXAlignment.Left
-				userLbl.TextTruncate = Enum.TextTruncate.AtEnd
-
-				local isSel = (plr == TargetCommands.SelectedPlayer)
-				local selBtn = Instance.new("TextButton", pCard)
-				selBtn.Name = "SelectButton"
-				selBtn.Size = UDim2.fromOffset(72, 28)
-				selBtn.AnchorPoint = Vector2.new(1, 0.5)
-				selBtn.Position = UDim2.new(1, -12, 0.5, 0)
-				selBtn.BackgroundColor3 = isSel and COLORS.SwitchOn or COLORS.ButtonPill
-				selBtn.BorderSizePixel = 0
-				selBtn.Font = Enum.Font.GothamBold
-				selBtn.Text = isSel and "Selected" or "Select"
-				selBtn.TextColor3 = COLORS.White
-				selBtn.TextSize = 11
-				selBtn.AutoButtonColor = false
-				Instance.new("UICorner", selBtn).CornerRadius = UDim.new(0, 9)
-
-				local selStroke = Instance.new("UIStroke", selBtn)
-				selStroke.Color = COLORS.GlassStrokeColor
-				selStroke.Thickness = 1
-				selStroke.Transparency = 0.55
-
-				Theme.AttachSpringPress(selBtn, 0.90, 1.05)
-
-				PlayerCardSelectButtons[plr] = { Button = selBtn }
-
-				selBtn.Activated:Connect(function()
-					selectPlayer(plr)
-				end)
+		-- Sort: others alphabetically, yourself last
+		table.sort(allPlayers, function(a, b)
+			if (a == LocalPlayer) ~= (b == LocalPlayer) then
+				return b == LocalPlayer
 			end
+			return string.lower(a.DisplayName) < string.lower(b.DisplayName)
+		end)
+
+		local query = string.lower(searchBox.Text or "")
+		local matches = {}
+		for _, plr in ipairs(allPlayers) do
+			if query == ""
+				or string.find(string.lower(plr.Name), query, 1, true)
+				or string.find(string.lower(plr.DisplayName), query, 1, true)
+			then
+				table.insert(matches, plr)
+			end
+		end
+
+		for i, plr in ipairs(matches) do
+			makePlayerRow(plr, i, i == #matches)
+		end
+
+		if #matches == 0 then
+			local empty = Instance.new("TextLabel", playerList)
+			empty.Size = UDim2.new(1, 0, 0, ROW_H)
+			empty.BackgroundTransparency = 1
+			empty.Font = Enum.Font.GothamMedium
+			empty.Text = "No players match \"" .. (searchBox.Text or "") .. "\""
+			empty.TextColor3 = COLORS.TextMuted
+			empty.TextSize = 12
+			empty.TextTruncate = Enum.TextTruncate.AtEnd
+			empty.ZIndex = 2
+		end
+
+		local visibleRows = math.clamp(#matches, 1, MAX_VISIBLE_ROWS)
+		currentListHeight = visibleRows * ROW_H
+		playerList.Size = UDim2.new(1, -24, 0, currentListHeight)
+
+		if dropdownOpen then
+			TweenService:Create(dropdown, DROPDOWN_TWEEN, {
+				Size = UDim2.new(1, 0, 0, openHeight()),
+			}):Play()
 		end
 	end
 
-	searchBox:GetPropertyChangedSignal("Text"):Connect(rebuildPlayerCards)
+	searchBox:GetPropertyChangedSignal("Text"):Connect(rebuildPlayerList)
 	Players.PlayerAdded:Connect(function()
 		task.wait(0.1)
-		rebuildPlayerCards()
+		rebuildPlayerList()
 	end)
 	Players.PlayerRemoving:Connect(function(plr)
+		ThumbCache[plr.UserId] = nil
 		if TargetCommands.SelectedPlayer == plr then
 			TargetCommands.SetSelectedPlayer(nil)
 			for _, ctrlTbl in ipairs(activeControllerTables) do
@@ -480,10 +702,10 @@ function PlayersPage.Build(pagesHolder)
 			end
 		end
 		task.wait(0.05)
-		rebuildPlayerCards()
+		rebuildPlayerList()
 	end)
 
-	rebuildPlayerCards()
+	rebuildPlayerList()
 
 	return pageWrap
 end

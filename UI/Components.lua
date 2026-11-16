@@ -136,6 +136,7 @@ function Components.CreateIosGroup(parentScroll, order, groupTitle, rowsSpec)
 			inputStroke.Color = COLORS.GlassStrokeColor
 			inputStroke.Thickness = 1
 			inputStroke.Transparency = 0.55
+			Theme.RegisterControl(inputWrap, nil, 0.45)
 
 			local box = Instance.new("TextBox", inputWrap)
 			box.Name = "AmountBox"
@@ -186,6 +187,7 @@ function Components.CreateIosGroup(parentScroll, order, groupTitle, rowsSpec)
 
 		elseif spec.Kind == "Button" then
 			local pillColor = spec.Destructive and COLORS.NotifCancelRed or COLORS.ButtonPill
+			local glassColor = spec.Destructive and Color3.fromRGB(255, 95, 85) or Color3.fromRGB(220, 234, 255)
 			local pillBtn = Instance.new("TextButton", rowFrame)
 			pillBtn.Size = UDim2.fromOffset(78, 28)
 			pillBtn.AnchorPoint = Vector2.new(1, 0.5)
@@ -197,22 +199,35 @@ function Components.CreateIosGroup(parentScroll, order, groupTitle, rowsSpec)
 			pillBtn.TextColor3 = COLORS.White
 			pillBtn.TextSize = 11
 			pillBtn.AutoButtonColor = false
-			Instance.new("UICorner", pillBtn).CornerRadius = UDim.new(0, 9)
+			Instance.new("UICorner", pillBtn).CornerRadius = UDim.new(1, 0)
 
 			local pStroke = Instance.new("UIStroke", pillBtn)
 			pStroke.Color = COLORS.GlassStrokeColor
 			pStroke.Thickness = 1
 			pStroke.Transparency = 0.55
+			Theme.RegisterControl(pillBtn, pStroke, spec.Destructive and 0.45 or 0.70, glassColor)
 
 			Theme.AttachSpringPress(pillBtn, 0.92, 1.04)
 
 			pillBtn.MouseEnter:Connect(function()
-				TweenService:Create(pillBtn, IOS_TIMING.PressDown, {
-					BackgroundColor3 = spec.Destructive and COLORS.DangerRed or COLORS.ButtonPillHover,
-				}):Play()
+				if Config.UISettings.GlassUI then
+					TweenService:Create(pillBtn, IOS_TIMING.PressDown, {
+						BackgroundTransparency = spec.Destructive and 0.32 or 0.56,
+					}):Play()
+				else
+					TweenService:Create(pillBtn, IOS_TIMING.PressDown, {
+						BackgroundColor3 = spec.Destructive and COLORS.DangerRed or COLORS.ButtonPillHover,
+					}):Play()
+				end
 			end)
 			pillBtn.MouseLeave:Connect(function()
-				TweenService:Create(pillBtn, IOS_TIMING.PressDown, { BackgroundColor3 = pillColor }):Play()
+				if Config.UISettings.GlassUI then
+					TweenService:Create(pillBtn, IOS_TIMING.PressDown, {
+						BackgroundTransparency = spec.Destructive and 0.45 or 0.70,
+					}):Play()
+				else
+					TweenService:Create(pillBtn, IOS_TIMING.PressDown, { BackgroundColor3 = pillColor }):Play()
+				end
 			end)
 			pillBtn.Activated:Connect(function()
 				if spec.Callback then

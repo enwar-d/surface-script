@@ -85,20 +85,29 @@ function ScriptsPage.Build(pagesHolder)
 		execBtn.TextColor3 = COLORS.White
 		execBtn.TextSize = 12
 		execBtn.AutoButtonColor = false
-		Instance.new("UICorner", execBtn).CornerRadius = UDim.new(0, 9)
+		Instance.new("UICorner", execBtn).CornerRadius = UDim.new(1, 0)
 
 		local btnStroke = Instance.new("UIStroke", execBtn)
 		btnStroke.Color = COLORS.GlassStrokeColor
 		btnStroke.Thickness = 1
 		btnStroke.Transparency = 0.50
+		Theme.RegisterControl(execBtn, btnStroke, 0.70, Color3.fromRGB(220, 234, 255))
 
 		Theme.AttachSpringPress(execBtn, 0.90, 1.05)
 
 		execBtn.MouseEnter:Connect(function()
-			TweenService:Create(execBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.ButtonPillHover }):Play()
+			if Config.UISettings.GlassUI then
+				TweenService:Create(execBtn, IOS_TIMING.PressDown, { BackgroundTransparency = 0.56 }):Play()
+			else
+				TweenService:Create(execBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.ButtonPillHover }):Play()
+			end
 		end)
 		execBtn.MouseLeave:Connect(function()
-			TweenService:Create(execBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.ButtonPill }):Play()
+			if Config.UISettings.GlassUI then
+				TweenService:Create(execBtn, IOS_TIMING.PressDown, { BackgroundTransparency = 0.70 }):Play()
+			else
+				TweenService:Create(execBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.ButtonPill }):Play()
+			end
 		end)
 		execBtn.Activated:Connect(function()
 			ScriptDatabase.ExecuteEntry(scriptEntry, Notifications.Notify)

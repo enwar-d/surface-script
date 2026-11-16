@@ -396,6 +396,76 @@ function PlayerCommands.LayDown()
 	end
 end
 
+local JerkToolInstance = nil
+
+function PlayerCommands.GiveJerkTool()
+	if not LocalPlayer then return end
+	local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+	local char = LocalPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+	if (backpack and backpack:FindFirstChild("Jerk")) or (char and char:FindFirstChild("Jerk")) then
+		notify("Jerk Tool", "Already in your inventory")
+		return
+	end
+
+	local tool = Instance.new("Tool")
+	tool.Name = "Jerk"
+	tool.RequiresHandle = false
+	tool.CanBeDropped = false
+	tool.ToolTip = "Jerk"
+
+	local activeTrack = nil
+
+	local function stopAnim()
+		if activeTrack then
+			pcall(function()
+				activeTrack:Stop()
+				activeTrack:Destroy()
+			end)
+			activeTrack = nil
+		end
+	end
+
+	local function playAnim()
+		stopAnim()
+		local c = LocalPlayer.Character
+		local h = c and c:FindFirstChildOfClass("Humanoid")
+		if not h then return end
+		local animator = h:FindFirstChildOfClass("Animator") or Instance.new("Animator", h)
+		local anim = Instance.new("Animation")
+		anim.AnimationId = (h.RigType == Enum.HumanoidRigType.R6)
+			and "rbxassetid://72042024"
+			or "rbxassetid://698251653"
+		local ok, track = pcall(function()
+			return animator:LoadAnimation(anim)
+		end)
+		anim:Destroy()
+		if ok and track then
+			track.Looped = true
+			track.Priority = Enum.AnimationPriority.Action
+			track:Play()
+			activeTrack = track
+		end
+	end
+
+	tool.Equipped:Connect(playAnim)
+	tool.Activated:Connect(function()
+		if not activeTrack or not activeTrack.IsPlaying then
+			playAnim()
+		end
+	end)
+	tool.Unequipped:Connect(stopAnim)
+	tool.Destroying:Connect(stopAnim)
+
+	tool.Parent = backpack or char
+	JerkToolInstance = tool
+	if hum and backpack then
+		pcall(function() hum:EquipTool(tool) end)
+	end
+	notify("Jerk Tool", "Added Jerk tool to your Backpack")
+end
+
 function PlayerCommands.ResetCharacter()
 	local char = LocalPlayer and LocalPlayer.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -751,6 +821,10 @@ function PlayerCommands.ResetAllCommands()
 	State.ClickTP = false
 	State.AntiAFK = false
 	State.InstantPrompts = false
+	if JerkToolInstance and JerkToolInstance.Parent then
+		JerkToolInstance:Destroy()
+		JerkToolInstance = nil
+	end
 	PlayerCommands.ApplyMovement()
 end
 

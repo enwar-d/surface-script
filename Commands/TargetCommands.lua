@@ -23,12 +23,18 @@ TargetCommands.State = {
 	FlingTarget = false,
 	StareAt = false,
 	Highlight = false,
+	BangV2 = false,
+	GetBanged = false,
+	Suck = false,
+	GetSuc = false,
 }
 
 local State = TargetCommands.State
 local NotifyFunc = nil
 local ActiveHighlight = nil
 local ActiveBillboard = nil
+local ActiveFunTrack = nil
+local ActiveFunMode = nil
 local OrbitAngle = 0
 local SavedPreFlingCF = nil
 local ActiveConnections = {}
@@ -217,6 +223,94 @@ function TargetCommands.SetFlingTarget(enabled)
 	end
 end
 
+local FUN_MODES = {
+	BangV2 = {
+		R6 = { Id = "189854234", Speed = 1.8 },
+		R15 = { Id = "10714068222", Speed = 2.0 },
+		PlatformStand = false,
+	},
+	GetBanged = {
+		R6 = { Id = "189854234", Speed = 1.8 },
+		R15 = { Id = "10714360343", Speed = 1.5 },
+		PlatformStand = false,
+	},
+	Suck = {
+		R6 = { Id = "178130996", Speed = 1.0 },
+		R15 = { Id = "5918726674", Speed = 1.0 },
+		PlatformStand = true,
+	},
+	GetSuc = {
+		R6 = { Id = "148840371", Speed = 3.0 },
+		R15 = { Id = "5918726674", Speed = 1.0 },
+		PlatformStand = true,
+	},
+}
+
+local function stopFunTrack()
+	if ActiveFunTrack then
+		pcall(function()
+			ActiveFunTrack:Stop()
+			ActiveFunTrack:Destroy()
+		end)
+		ActiveFunTrack = nil
+	end
+end
+
+local function startFunTrack(modeName)
+	stopFunTrack()
+	local spec = FUN_MODES[modeName]
+	if not spec then return end
+	local myChar = LocalPlayer and LocalPlayer.Character
+	local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+	if not myHum then return end
+
+	local animSpec = (myHum.RigType == Enum.HumanoidRigType.R6) and spec.R6 or spec.R15
+	local animator = myHum:FindFirstChildOfClass("Animator") or Instance.new("Animator", myHum)
+	local anim = Instance.new("Animation")
+	anim.AnimationId = "rbxassetid://" .. animSpec.Id
+	local ok, track = pcall(function()
+		return animator:LoadAnimation(anim)
+	end)
+	anim:Destroy()
+	if ok and track then
+		track.Looped = true
+		track.Priority = Enum.AnimationPriority.Action
+		track:Play()
+		track:AdjustSpeed(animSpec.Speed)
+		ActiveFunTrack = track
+	end
+	if spec.PlatformStand then
+		myHum.PlatformStand = true
+	end
+end
+
+function TargetCommands.SetFunMode(modeName, enabled)
+	for k, _ in pairs(FUN_MODES) do
+		State[k] = false
+	end
+	stopFunTrack()
+	ActiveFunMode = nil
+
+	local myChar = LocalPlayer and LocalPlayer.Character
+	local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+	if not enabled then
+		if myHum then
+			myHum.PlatformStand = false
+		end
+		return
+	end
+
+	local target = TargetCommands.SelectedPlayer
+	if not target or target == LocalPlayer or not target.Character then
+		notify("Players", "Select another spawned player first")
+		return
+	end
+
+	State[modeName] = true
+	ActiveFunMode = modeName
+	startFunTrack(modeName)
+end
+
 function TargetCommands.SetSelectedPlayer(plr)
 	TargetCommands.SelectedPlayer = plr
 	if State.Spectate then
@@ -289,6 +383,31 @@ local hbConn = RunService.Heartbeat:Connect(function()
 			Vector3.new(targetRoot.Position.X, myRoot.Position.Y, targetRoot.Position.Z)
 		)
 	end
+
+	-- 8. Fun Time Friday modes (cleanly welded in Heartbeat without blocking tweens or gravity hacks)
+	if ActiveFunMode then
+		if not ActiveFunTrack or not ActiveFunTrack.IsPlaying then
+			startFunTrack(ActiveFunMode)
+		end
+		myRoot.Velocity = Vector3.zero
+		myRoot.RotVelocity = Vector3.zero
+
+		local t = os.clock()
+		if State.BangV2 then
+			local z = 1.65 + math.sin(t * 11) * 0.55
+			myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, z)
+		elseif State.GetBanged then
+			local z = -1.6 + math.sin(t * 11) * 0.45
+			myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, z)
+		elseif State.Suck then
+			local targetTorso = target.Character:FindFirstChild("LowerTorso")
+				or target.Character:FindFirstChild("Torso")
+				or targetRoot
+			myRoot.CFrame = targetTorso.CFrame * CFrame.new(0, -2.3, -1.0) * CFrame.Angles(0, math.pi, 0)
+		elseif State.GetSuc then
+			myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 2.3, -1.1) * CFrame.Angles(0, math.pi, 0)
+		end
+	end
 end)
 table.insert(ActiveConnections, hbConn)
 
@@ -296,6 +415,7 @@ function TargetCommands.ResetAllCommands()
 	TargetCommands.SetSpectate(false)
 	TargetCommands.SetHighlight(false)
 	TargetCommands.SetFlingTarget(false)
+	TargetCommands.SetFunMode(nil, false)
 	State.Follow = false
 	State.Orbit = false
 	State.Headsit = false

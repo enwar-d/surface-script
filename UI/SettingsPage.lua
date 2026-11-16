@@ -19,7 +19,7 @@ local IOS_TIMING = Config.IOS_TIMING
 
 local SettingsPage = {}
 
-function SettingsPage.Build(pagesHolder, mainWindowFrame, onBlurChanged, onMinimizeToEdge, onUnloadSession)
+function SettingsPage.Build(pagesHolder, mainWindowFrame, onBlurChanged, onMinimizeToEdge, onUnloadSession, onWindowSizeChanged)
 	local pageWrap = Instance.new("CanvasGroup")
 	pageWrap.Name = "Page_Settings"
 	pageWrap.Size = UDim2.fromScale(1, 1)
@@ -53,34 +53,67 @@ function SettingsPage.Build(pagesHolder, mainWindowFrame, onBlurChanged, onMinim
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	listLayout.Padding = UDim.new(0, 12)
 
-	-- 1. APPEARANCE
-	local _, appearanceCtrl = Components.CreateIosGroup(scroll, 1, "Appearance", {
-		{
-			Title = "Glass UI",
-			Kind = "Toggle",
-			Default = UISettings.GlassUI,
-			Callback = function(enabled)
-				UISettings.GlassUI = enabled
-				Theme.Refresh()
-				if onBlurChanged then
-					onBlurChanged()
-				end
-				Config.SaveSettings()
-			end,
-		},
-		{
-			Title = "Background Blur",
-			Kind = "Toggle",
-			Default = UISettings.BackgroundBlur,
-			Callback = function(enabled)
-				UISettings.BackgroundBlur = enabled
-				if onBlurChanged then
-					onBlurChanged()
-				end
-				Config.SaveSettings()
-			end,
-		},
-	})
+	-- 1. APPEARANCE (rebuilt when Glass UI toggles so "Refraction Follows Cursor" only appears when Glass UI is on)
+	local appearanceWrap = Instance.new("Frame", scroll)
+	appearanceWrap.Name = "AppearanceWrap"
+	appearanceWrap.LayoutOrder = 1
+	appearanceWrap.Size = UDim2.new(1, 0, 0, 0)
+	appearanceWrap.AutomaticSize = Enum.AutomaticSize.Y
+	appearanceWrap.BackgroundTransparency = 1
+
+	local appearanceCtrl = {}
+	local buildAppearanceGroup -- forward declaration
+
+	buildAppearanceGroup = function()
+		for _, child in ipairs(appearanceWrap:GetChildren()) do
+			if child:IsA("GuiObject") then
+				child:Destroy()
+			end
+		end
+		local rows = {
+			{
+				Title = "Glass UI",
+				Kind = "Toggle",
+				Default = UISettings.GlassUI,
+				Callback = function(enabled)
+					UISettings.GlassUI = enabled
+					Theme.Refresh()
+					if onBlurChanged then
+						onBlurChanged()
+					end
+					Config.SaveSettings()
+					buildAppearanceGroup()
+				end,
+			},
+			{
+				Title = "Darken Background",
+				Kind = "Toggle",
+				Default = UISettings.BackgroundBlur,
+				Callback = function(enabled)
+					UISettings.BackgroundBlur = enabled
+					if onBlurChanged then
+						onBlurChanged()
+					end
+					Config.SaveSettings()
+				end,
+			},
+		}
+		if UISettings.GlassUI then
+			table.insert(rows, {
+				Title = "Refraction Follows Cursor",
+				Kind = "Toggle",
+				Default = UISettings.RefractionFollowsCursor,
+				Callback = function(enabled)
+					UISettings.RefractionFollowsCursor = enabled
+					Config.SaveSettings()
+				end,
+			})
+		end
+		local _, ctrl = Components.CreateIosGroup(appearanceWrap, 1, "Appearance", rows)
+		appearanceCtrl = ctrl
+	end
+
+	buildAppearanceGroup()
 
 	-- 2. COMMANDS (Basic vs Advanced Mode)
 	local _, commandsCtrl = Components.CreateIosGroup(scroll, 2, "Commands", {
@@ -120,14 +153,18 @@ function SettingsPage.Build(pagesHolder, mainWindowFrame, onBlurChanged, onMinim
 	})
 
 	-- 4. WINDOW & SESSION
-	Components.CreateIosGroup(scroll, 4, "Window & Session", {
+	local windowCtrl = nil
+	local _, wCtrl = Components.CreateIosGroup(scroll, 4, "Window & Session", {
 		{
-			Title = "Reset Menu Position",
-			Kind = "Action",
-			Callback = function()
-				TweenService:Create(mainWindowFrame, IOS_TIMING.PanelOpen, {
-					Position = Config.REGULAR_WINDOW_POS,
-				}):Play()
+			Title = "Smaller Window",
+			Kind = "Toggle",
+			Default = UISettings.SmallerWindow,
+			Callback = function(enabled)
+				UISettings.SmallerWindow = enabled
+				Config.SaveSettings()
+				if onWindowSizeChanged then
+					onWindowSizeChanged(true)
+				end
 			end,
 		},
 		{
@@ -144,12 +181,7 @@ function SettingsPage.Build(pagesHolder, mainWindowFrame, onBlurChanged, onMinim
 			Kind = "Action",
 			Callback = function()
 				Config.ResetToDefaults()
-				if appearanceCtrl["Glass UI"] then
-					appearanceCtrl["Glass UI"].SetState(UISettings.GlassUI, true)
-				end
-				if appearanceCtrl["Background Blur"] then
-					appearanceCtrl["Background Blur"].SetState(UISettings.BackgroundBlur, true)
-				end
+				buildAppearanceGroup()
 				if commandsCtrl["Advanced Mode"] then
 					commandsCtrl["Advanced Mode"].SetState(UISettings.AdvancedMode, true)
 				end
@@ -159,9 +191,15 @@ function SettingsPage.Build(pagesHolder, mainWindowFrame, onBlurChanged, onMinim
 				if notifCtrl["Compact Notifications"] then
 					notifCtrl["Compact Notifications"].SetState(UISettings.CompactNotifications, true)
 				end
+				if windowCtrl and windowCtrl["Smaller Window"] then
+					windowCtrl["Smaller Window"].SetState(UISettings.SmallerWindow, true)
+				end
 				Theme.Refresh()
 				if onBlurChanged then
 					onBlurChanged()
+				end
+				if onWindowSizeChanged then
+					onWindowSizeChanged(true)
 				end
 				PlayerPage.Rebuild()
 				PlayersPage.Rebuild()
@@ -195,6 +233,7 @@ function SettingsPage.Build(pagesHolder, mainWindowFrame, onBlurChanged, onMinim
 			end,
 		},
 	})
+	windowCtrl = wCtrl
 
 	return pageWrap
 end

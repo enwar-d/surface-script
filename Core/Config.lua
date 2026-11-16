@@ -17,6 +17,8 @@ Config.REGULAR_WINDOW_POS = UDim2.new(1, -84, 0.5, 0)
 Config.DefaultSettings = {
 	GlassUI = true,
 	BackgroundBlur = true,
+	RefractionFollowsCursor = false,
+	SmallerWindow = false,
 	SwipeToDismiss = true,
 	CompactNotifications = true,
 	AdvancedMode = false,
@@ -25,6 +27,8 @@ Config.DefaultSettings = {
 Config.UISettings = {
 	GlassUI = Config.DefaultSettings.GlassUI,
 	BackgroundBlur = Config.DefaultSettings.BackgroundBlur,
+	RefractionFollowsCursor = Config.DefaultSettings.RefractionFollowsCursor,
+	SmallerWindow = Config.DefaultSettings.SmallerWindow,
 	SwipeToDismiss = Config.DefaultSettings.SwipeToDismiss,
 	CompactNotifications = Config.DefaultSettings.CompactNotifications,
 	AdvancedMode = Config.DefaultSettings.AdvancedMode,
@@ -92,13 +96,17 @@ Config.COLORS = {
 	CancelRedHover = Color3.fromRGB(240, 104, 102),
 	SubText = Color3.fromRGB(205, 210, 220),
 
-	GlassWindowTop = Color3.fromRGB(28, 34, 48),
-	GlassWindowBottom = Color3.fromRGB(14, 17, 26),
-	GlassWindowTrans = 0.16,
+	-- Liquid Glass (see Core/Theme.lua for the layer recipe)
+	GlassWindowTop = Color3.fromRGB(58, 68, 94),
+	GlassWindowBottom = Color3.fromRGB(10, 12, 20),
+	GlassWindowTrans = 0.42,
 
-	GlassCardTop = Color3.fromRGB(46, 54, 74),
-	GlassCardBottom = Color3.fromRGB(26, 31, 44),
-	GlassCardTrans = 0.24,
+	GlassCardTop = Color3.fromRGB(195, 210, 240),
+	GlassCardBottom = Color3.fromRGB(105, 120, 155),
+	GlassCardTrans = 0.84,
+
+	GlassCaustic = Color3.fromRGB(170, 205, 255),
+	GlassWorldBlur = 18,
 
 	GlassStrokeColor = Color3.fromRGB(165, 185, 220),
 	GlassStrokeTrans = 0.62,
@@ -122,6 +130,8 @@ function Config.SaveSettings()
 	local payload = {
 		GlassUI = Config.UISettings.GlassUI,
 		BackgroundBlur = Config.UISettings.BackgroundBlur,
+		RefractionFollowsCursor = Config.UISettings.RefractionFollowsCursor,
+		SmallerWindow = Config.UISettings.SmallerWindow,
 		SwipeToDismiss = Config.UISettings.SwipeToDismiss,
 		CompactNotifications = Config.UISettings.CompactNotifications,
 		AdvancedMode = Config.UISettings.AdvancedMode,

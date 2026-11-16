@@ -7,6 +7,7 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local Config = require(script.Parent:WaitForChild("Config"))
+local Theme = require(script.Parent:WaitForChild("Theme"))
 local Icons = require(script.Parent:WaitForChild("Icons"))
 
 local COLORS = Config.COLORS
@@ -90,20 +91,25 @@ function Notifications.Notify(options)
 
 	local bgFrame = Instance.new("Frame")
 	bgFrame.Name = "PillBackground"
-	bgFrame.Size = UDim2.fromScale(1, 1)
+	bgFrame.Size = UISettings.GlassUI and UDim2.new(1, -2, 1, -2) or UDim2.fromScale(1, 1)
+	bgFrame.Position = UISettings.GlassUI and UDim2.fromOffset(1, 1) or UDim2.fromOffset(0, 0)
 	bgFrame.BackgroundColor3 = COLORS.White
 	bgFrame.BackgroundTransparency = UISettings.GlassUI and 0.12 or 0
 	bgFrame.BorderSizePixel = 0
 	bgFrame.ZIndex = 1
 	bgFrame.Parent = pillCanvas
 
-	local bgGradient = Instance.new("UIGradient")
-	bgGradient.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, COLORS.NotifTop),
-		ColorSequenceKeypoint.new(1, COLORS.NotifBottom),
-	})
-	bgGradient.Rotation = 90
-	bgGradient.Parent = bgFrame
+	if UISettings.GlassUI then
+		Theme.RegisterSurface(bgFrame, UDim.new(1, 0), "Notification")
+	else
+		local bgGradient = Instance.new("UIGradient")
+		bgGradient.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, COLORS.NotifTop),
+			ColorSequenceKeypoint.new(1, COLORS.NotifBottom),
+		})
+		bgGradient.Rotation = 90
+		bgGradient.Parent = bgFrame
+	end
 
 	local logoWidget = Icons.CreateSvgLogo(
 		pillCanvas,
@@ -156,17 +162,45 @@ function Notifications.Notify(options)
 	fillOverlay.BorderSizePixel = 0
 	fillOverlay.ZIndex = 8
 	fillOverlay.Parent = pillCanvas
+	Instance.new("UICorner", fillOverlay).CornerRadius = UDim.new(1, 0)
+
+	if UISettings.GlassUI then
+		local fillGrad = Instance.new("UIGradient", fillOverlay)
+		fillGrad.Rotation = 90
+		fillGrad.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+			ColorSequenceKeypoint.new(0.45, Color3.fromRGB(215, 225, 245)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(165, 180, 210)),
+		})
+		fillGrad.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.05),
+			NumberSequenceKeypoint.new(0.5, 0.25),
+			NumberSequenceKeypoint.new(1, 0.08),
+		})
+	end
 
 	local checkBtn = Instance.new("TextButton")
 	checkBtn.Name = "CheckButton"
 	checkBtn.Size = UDim2.new(0, checkBtnWidth, 1, 0)
 	checkBtn.Position = UDim2.new(1, -checkBtnWidth, 0, 0)
-	checkBtn.BackgroundColor3 = COLORS.CheckGray
+	checkBtn.BackgroundColor3 = UISettings.GlassUI and Color3.fromRGB(165, 185, 220) or COLORS.CheckGray
+	checkBtn.BackgroundTransparency = UISettings.GlassUI and 0.72 or 0
 	checkBtn.BorderSizePixel = 0
 	checkBtn.Text = ""
 	checkBtn.AutoButtonColor = false
 	checkBtn.ZIndex = 5
 	checkBtn.Parent = pillCanvas
+
+	local checkDiv = nil
+	if UISettings.GlassUI then
+		checkDiv = Instance.new("Frame", checkBtn)
+		checkDiv.Size = UDim2.new(0, 1, 1, -12)
+		checkDiv.Position = UDim2.new(0, 0, 0, 6)
+		checkDiv.BackgroundColor3 = COLORS.White
+		checkDiv.BackgroundTransparency = 0.82
+		checkDiv.BorderSizePixel = 0
+		checkDiv.ZIndex = 6
+	end
 
 	local checkIconHolder = Instance.new("Frame")
 	checkIconHolder.Name = "CheckIconHolder"
@@ -177,18 +211,29 @@ function Notifications.Notify(options)
 	checkIconHolder.Parent = pillCanvas
 	local checkIcon = Icons.CreateCircleIcon(checkIconHolder, "Check", 12, 23)
 
-	local cancelBtn, cancelIconHolder, cancelIcon
+	local cancelBtn, cancelIconHolder, cancelIcon, cancelDiv
 	if notifType == "Confirm" then
 		cancelBtn = Instance.new("TextButton")
 		cancelBtn.Name = "CancelButton"
 		cancelBtn.Size = UDim2.new(0, cancelBtnWidth, 1, 0)
 		cancelBtn.Position = UDim2.new(1, -(checkBtnWidth + cancelBtnWidth), 0, 0)
 		cancelBtn.BackgroundColor3 = COLORS.CancelRed
+		cancelBtn.BackgroundTransparency = UISettings.GlassUI and 0.42 or 0
 		cancelBtn.BorderSizePixel = 0
 		cancelBtn.Text = ""
 		cancelBtn.AutoButtonColor = false
 		cancelBtn.ZIndex = 5
 		cancelBtn.Parent = pillCanvas
+
+		if UISettings.GlassUI then
+			cancelDiv = Instance.new("Frame", cancelBtn)
+			cancelDiv.Size = UDim2.new(0, 1, 1, -12)
+			cancelDiv.Position = UDim2.new(0, 0, 0, 6)
+			cancelDiv.BackgroundColor3 = COLORS.White
+			cancelDiv.BackgroundTransparency = 0.82
+			cancelDiv.BorderSizePixel = 0
+			cancelDiv.ZIndex = 6
+		end
 
 		cancelIconHolder = Instance.new("Frame")
 		cancelIconHolder.Name = "CancelIconHolder"
@@ -261,8 +306,14 @@ function Notifications.Notify(options)
 		if notifObj.Dismissing then return end
 		notifObj.Dismissing = true
 
+		-- Immediately clear the button backgrounds so they never bleed through the expanding fill
+		if checkBtn then checkBtn.BackgroundTransparency = 1 end
+		if cancelBtn then cancelBtn.BackgroundTransparency = 1 end
+		if checkDiv then checkDiv.Visible = false end
+		if cancelDiv then cancelDiv.Visible = false end
+
 		fillOverlay.BackgroundColor3 = fillColor
-		fillOverlay.BackgroundTransparency = 0
+		fillOverlay.BackgroundTransparency = UISettings.GlassUI and 0.08 or 0
 		fillOverlay.Size = buttonFrame.Size
 		fillOverlay.Position = buttonFrame.Position
 
@@ -305,28 +356,45 @@ function Notifications.Notify(options)
 
 	checkBtn.MouseEnter:Connect(function()
 		if not notifObj.Dismissing then
-			TweenService:Create(checkBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.CheckGrayHover }):Play()
+			if UISettings.GlassUI then
+				TweenService:Create(checkBtn, IOS_TIMING.PressDown, { BackgroundTransparency = 0.56 }):Play()
+			else
+				TweenService:Create(checkBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.CheckGrayHover }):Play()
+			end
 		end
 	end)
 	checkBtn.MouseLeave:Connect(function()
 		if not notifObj.Dismissing then
-			TweenService:Create(checkBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.CheckGray }):Play()
+			if UISettings.GlassUI then
+				TweenService:Create(checkBtn, IOS_TIMING.PressDown, { BackgroundTransparency = 0.72 }):Play()
+			else
+				TweenService:Create(checkBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.CheckGray }):Play()
+			end
 		end
 	end)
 	checkBtn.Activated:Connect(function()
 		if notifObj.Dragging then return end
-		triggerButtonFillAndDismiss(checkBtn, COLORS.CheckGray, cancelIcon, options.OnConfirm)
+		local fillCol = UISettings.GlassUI and Color3.fromRGB(145, 170, 215) or COLORS.CheckGray
+		triggerButtonFillAndDismiss(checkBtn, fillCol, cancelIcon, options.OnConfirm)
 	end)
 
 	if cancelBtn then
 		cancelBtn.MouseEnter:Connect(function()
 			if not notifObj.Dismissing then
-				TweenService:Create(cancelBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.CancelRedHover }):Play()
+				if UISettings.GlassUI then
+					TweenService:Create(cancelBtn, IOS_TIMING.PressDown, { BackgroundTransparency = 0.25 }):Play()
+				else
+					TweenService:Create(cancelBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.CancelRedHover }):Play()
+				end
 			end
 		end)
 		cancelBtn.MouseLeave:Connect(function()
 			if not notifObj.Dismissing then
-				TweenService:Create(cancelBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.CancelRed }):Play()
+				if UISettings.GlassUI then
+					TweenService:Create(cancelBtn, IOS_TIMING.PressDown, { BackgroundTransparency = 0.42 }):Play()
+				else
+					TweenService:Create(cancelBtn, IOS_TIMING.PressDown, { BackgroundColor3 = COLORS.CancelRed }):Play()
+				end
 			end
 		end)
 		cancelBtn.Activated:Connect(function()
