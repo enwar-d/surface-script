@@ -27,5 +27,5 @@ SurfaceScript/
 
 ## Executing with:
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/enwar-d/surface-script/main/loader.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/enwar-d/surface-script/refs/heads/main/loader.lua"))()
 ```
